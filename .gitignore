@@ -1,0 +1,7 @@
+﻿*.mdf
+*.ldf
+*.ndf
+*.bak
+*.trn
+*.sqlsuo
+*.suo
