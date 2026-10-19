@@ -5,3 +5,10 @@
 *.trn
 *.sqlsuo
 *.suo
+
+# Backend / Frontend
+backend/.env
+backend/node_modules/
+backend/dist/
+frontend/node_modules/
+frontend/dist/

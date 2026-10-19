@@ -1,0 +1,67 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --color-cr-forest-night: #132B20;
+  --color-cr-forest: #1A3D2F;
+  --color-cr-moss: #2D5E46;
+  --color-cr-terracotta: #C05A3E;
+  --color-cr-wood: #5C3622;
+  --color-cr-ivory: #FAF7F0;
+  --color-cr-parchment: #F3ECE0;
+  --color-cr-fiber: #DFD5C4;
+}
+
+@layer base {
+  body {
+    background-color: #FAF7F0;
+    color: #132B20;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+}
+
+/* Custom scrollbars artesanales */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #DFD5C4;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #C05A3E;
+}
+
+/* Glassmorphism helpers con tono marfil / bosque */
+.glass-panel {
+  background: rgba(250, 247, 240, 0.94);
+  backdrop-filter: blur(14px);
+  border: 1px solid rgba(223, 213, 196, 0.7);
+}
+
+.glass-panel-dark {
+  background: rgba(19, 43, 32, 0.96);
+  backdrop-filter: blur(14px);
+  border: 1px solid rgba(45, 94, 70, 0.5);
+}
+
+/* Animations */
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-slide-up {
+  animation: slideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
