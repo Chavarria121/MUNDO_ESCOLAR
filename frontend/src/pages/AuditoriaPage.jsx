@@ -144,7 +144,7 @@ export default function AuditoriaPage() {
           </div>
         </div>
 
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-2.5 no-print">
           <button
             onClick={() => window.print()}
             className="flex items-center gap-1.5 px-4 py-2.5 text-xs font-bold text-[#132B20] bg-white border border-[#DFD5C4] hover:bg-[#F3ECE0] rounded-xl transition shadow-xs"
@@ -164,7 +164,7 @@ export default function AuditoriaPage() {
       </div>
 
       {/* Grid de Métricas de Auditoría */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 no-print">
         {/* Total Eventos */}
         <div className="bg-white rounded-2xl border border-[#DFD5C4] p-5 shadow-subtle hover:border-[#C05A3E] transition">
           <div className="flex items-center justify-between">
@@ -225,7 +225,7 @@ export default function AuditoriaPage() {
       </div>
 
       {/* Barra de Búsqueda y Filtros */}
-      <div className="bg-white rounded-2xl border border-[#DFD5C4] p-4 shadow-subtle flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
+      <div className="bg-white rounded-2xl border border-[#DFD5C4] p-4 shadow-subtle flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs no-print">
         <div className="relative flex-1 max-w-md">
           <Search className="w-4 h-4 text-[#5C3622]/60 absolute left-3.5 top-1/2 -translate-y-1/2" />
           <input
@@ -270,8 +270,22 @@ export default function AuditoriaPage() {
         </div>
       </div>
 
+      {/* Encabezado Oficial Exclusivo para Impresión */}
+      <div className="hidden print:block mb-4 pb-2 border-b-2 border-[#132B20]">
+        <div className="flex justify-between items-end">
+          <div>
+            <h1 className="text-xl font-black text-[#132B20]">LIBRERÍA Y PAPELERÍA MUNDO ESCOLAR</h1>
+            <p className="text-xs text-[#5C3622]">Historial de Auditoría, Seguridad y Trazabilidad del Sistema • Liberia, Guanacaste</p>
+          </div>
+          <div className="text-right text-xs text-[#5C3622]">
+            <p><span className="font-bold">Fecha de Emisión:</span> {new Date().toLocaleString('es-CR')}</p>
+            <p><span className="font-bold">Total Registros:</span> {registrosFiltrados.length}</p>
+          </div>
+        </div>
+      </div>
+
       {/* Tabla del Historial de Actividades */}
-      <div className="bg-white rounded-3xl border border-[#DFD5C4] shadow-subtle overflow-hidden">
+      <div className="bg-white rounded-3xl border border-[#DFD5C4] shadow-subtle overflow-hidden print:border-none print:shadow-none print:rounded-none">
         {loading ? (
           <div className="p-16 text-center text-[#5C3622] space-y-3">
             <div className="w-8 h-8 border-3 border-[#DFD5C4] border-t-[#C05A3E] rounded-full animate-spin mx-auto" />
@@ -284,7 +298,7 @@ export default function AuditoriaPage() {
             <p className="text-xs">Intenta modificando el término de búsqueda o el tipo de acción.</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto print:overflow-visible">
             <table className="w-full text-left text-xs">
               <thead className="bg-[#F3ECE0]/80 text-[#5C3622] uppercase tracking-wider font-bold border-b border-[#DFD5C4]">
                 <tr>
@@ -304,7 +318,7 @@ export default function AuditoriaPage() {
                   const esDelete = r.Accion === 'DELETE';
 
                   return (
-                    <tr key={r.Id_Bitacora} className="hover:bg-[#FAF7F0] transition">
+                    <tr key={r.Id_Bitacora} className="hover:bg-[#FAF7F0] transition print:break-inside-avoid">
                       <td className="py-3.5 px-4 font-mono font-bold text-[#C05A3E]">
                         #{r.Id_Bitacora?.toString().padStart(6, '0')}
                       </td>

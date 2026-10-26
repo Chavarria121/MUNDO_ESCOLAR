@@ -65,8 +65,11 @@ export default function ClientesPage() {
     nombre: '',
     apellido1: '',
     apellido2: '',
+    correo: '',
     telefono: '',
     direccion: '',
+    usuarioPortal: '',
+    contrasenaPortal: '',
   });
 
   // Formulario Institucional
@@ -78,7 +81,12 @@ export default function ClientesPage() {
     correoContacto: '',
     telefono: '',
     direccion: '',
+    usuarioPortal: '',
+    contrasenaPortal: '',
   });
+
+  // Pestaña activa en Modal Editar ('DATOS' | 'CREDITO')
+  const [pestanaEditar, setPestanaEditar] = useState('DATOS');
 
   // Formulario Edición
   const [formEditar, setFormEditar] = useState({
@@ -92,6 +100,7 @@ export default function ClientesPage() {
     telefono: '',
     direccion: '',
     estado: true,
+    contrasenaPortal: '',
   });
 
   // Formulario Nueva Condición de Crédito
@@ -175,6 +184,8 @@ export default function ClientesPage() {
           nombre: res.data.nombre || prev.nombre,
           apellido1: res.data.apellido1 || prev.apellido1,
           apellido2: res.data.apellido2 || prev.apellido2,
+          usuarioPortal: prev.usuarioPortal || ('cli.' + limpia),
+          contrasenaPortal: prev.contrasenaPortal || 'Cliente2026!',
         }));
         showToast(`¡TSE Verificado! ${res.data.nombreCompleto}`, 'success');
       } else {
@@ -206,6 +217,8 @@ export default function ClientesPage() {
           ...prev,
           cedulaJuridica: res.data.cedulaJuridica || prev.cedulaJuridica,
           razonSocial: res.data.razonSocial || prev.razonSocial,
+          usuarioPortal: prev.usuarioPortal || ('inst.' + limpia),
+          contrasenaPortal: prev.contrasenaPortal || 'Cliente2026!',
         }));
         showToast(`¡Hacienda Verificado! ${res.data.razonSocial}`, 'success');
       } else {
@@ -222,13 +235,17 @@ export default function ClientesPage() {
   // ================= CREAR PARTICULAR =================
   const abrirCrearParticular = (cedulaInicial = '') => {
     ultimaCedulaConsultada.current = '';
+    const cleanId = (cedulaInicial || '').replace(/\D/g, '');
     setFormParticular({
       identificacion: cedulaInicial || '',
       nombre: '',
       apellido1: '',
       apellido2: '',
+      correo: '',
       telefono: '',
       direccion: '',
+      usuarioPortal: cleanId ? `cli.${cleanId}` : '',
+      contrasenaPortal: 'Cliente2026!',
     });
     setModalParticularAbierto(true);
     if (cedulaInicial && cedulaInicial.replace(/\D/g, '').length >= 8) {
@@ -245,16 +262,22 @@ export default function ClientesPage() {
 
     setGuardando(true);
     try {
+      const nomUserFinal = formParticular.usuarioPortal.trim() || undefined;
+      const passFinal = formParticular.contrasenaPortal.trim() || 'Cliente2026!';
+
       await api.post('/clientes/particular', {
         identificacion: formParticular.identificacion.trim(),
         nombre: formParticular.nombre.trim(),
         apellido1: formParticular.apellido1.trim(),
         apellido2: formParticular.apellido2.trim() || undefined,
+        correo: formParticular.correo.trim() || undefined,
         telefono: formParticular.telefono.trim() || undefined,
         direccion: formParticular.direccion.trim() || undefined,
+        nombreUsuario: nomUserFinal,
+        contrasena: passFinal,
       });
 
-      showToast('Cliente particular registrado exitosamente', 'success');
+      showToast(`¡Cliente registrado! Usuario: ${nomUserFinal || 'cli.' + formParticular.identificacion.replace(/\D/g, '')} | Clave: ${passFinal}`, 'success');
       setModalParticularAbierto(false);
       cargarDatos();
     } catch (err) {
@@ -269,6 +292,7 @@ export default function ClientesPage() {
   // ================= CREAR INSTITUCIONAL =================
   const abrirCrearInstitucional = (cedulaInicial = '') => {
     ultimaJuridicaConsultada.current = '';
+    const cleanId = (cedulaInicial || '').replace(/\D/g, '');
     setFormInstitucional({
       cedulaJuridica: cedulaInicial || '',
       razonSocial: '',
@@ -277,6 +301,8 @@ export default function ClientesPage() {
       correoContacto: '',
       telefono: '',
       direccion: '',
+      usuarioPortal: cleanId ? `inst.${cleanId}` : '',
+      contrasenaPortal: 'Cliente2026!',
     });
     setModalInstitucionalAbierto(true);
     if (cedulaInicial && cedulaInicial.replace(/\D/g, '').length >= 9) {
@@ -293,6 +319,9 @@ export default function ClientesPage() {
 
     setGuardando(true);
     try {
+      const nomUserFinal = formInstitucional.usuarioPortal.trim() || undefined;
+      const passFinal = formInstitucional.contrasenaPortal.trim() || 'Cliente2026!';
+
       await api.post('/clientes/institucional', {
         cedulaJuridica: formInstitucional.cedulaJuridica.trim(),
         razonSocial: formInstitucional.razonSocial.trim(),
@@ -301,9 +330,11 @@ export default function ClientesPage() {
         correoContacto: formInstitucional.correoContacto.trim() || undefined,
         telefono: formInstitucional.telefono.trim() || undefined,
         direccion: formInstitucional.direccion.trim() || undefined,
+        nombreUsuario: nomUserFinal,
+        contrasena: passFinal,
       });
 
-      showToast('Cliente institucional registrado exitosamente', 'success');
+      showToast(`¡Institución registrada! Usuario: ${nomUserFinal || 'inst.' + formInstitucional.cedulaJuridica.replace(/\D/g, '')} | Clave: ${passFinal}`, 'success');
       setModalInstitucionalAbierto(false);
       cargarDatos();
     } catch (err) {
@@ -316,12 +347,16 @@ export default function ClientesPage() {
   };
 
   // ================= EDITAR CLIENTE =================
-  const abrirEditar = (cliente) => {
+  const abrirEditar = async (cliente) => {
     setClienteSeleccionado(cliente);
+    setPestanaEditar('DATOS');
+
+    // Prellenar inmediatamente con los datos disponibles del cliente
     setFormEditar({
       nombre: cliente.Nombre || '',
       apellido1: cliente.Apellido1 || '',
       apellido2: cliente.Apellido2 || '',
+      correo: cliente.Correo || cliente.Correo_Usuario || '',
       razonSocial: cliente.Razon_Social || '',
       nombreContacto: cliente.Nombre_Contacto || '',
       telefonoContacto: cliente.Telefono_Contacto || '',
@@ -331,6 +366,35 @@ export default function ClientesPage() {
       estado: cliente.Estado ?? true,
     });
     setModalEditarAbierto(true);
+
+    // Obtener detalles completos desde SP_Cliente_Consultar y condiciones autorizadas
+    try {
+      const [resDetalle, resCond] = await Promise.all([
+        api.get(`/clientes/${cliente.Id_Cliente}`),
+        api.get(`/clientes/${cliente.Id_Cliente}/condiciones-pago`),
+      ]);
+
+      if (resDetalle.data) {
+        const d = resDetalle.data;
+        setFormEditar((prev) => ({
+          ...prev,
+          nombre: d.Nombre ?? prev.nombre,
+          apellido1: d.Apellido1 ?? prev.apellido1,
+          apellido2: d.Apellido2 ?? prev.apellido2,
+          correo: d.Correo ?? prev.correo,
+          razonSocial: d.Razon_Social ?? prev.razonSocial,
+          nombreContacto: d.Nombre_Contacto ?? prev.nombreContacto,
+          telefonoContacto: d.Telefono_Contacto ?? prev.telefonoContacto,
+          correoContacto: d.Correo_Contacto ?? prev.correoContacto,
+          telefono: d.Telefono ?? prev.telefono,
+          direccion: d.Direccion ?? prev.direccion,
+          estado: d.Estado ?? prev.estado,
+        }));
+      }
+      setCondicionesCliente(resCond.data || []);
+    } catch (err) {
+      console.error('Error cargando datos completos del cliente:', err);
+    }
   };
 
   const guardarEdicion = async (e) => {
@@ -349,6 +413,7 @@ export default function ClientesPage() {
         payload.nombre = formEditar.nombre;
         payload.apellido1 = formEditar.apellido1;
         payload.apellido2 = formEditar.apellido2 || undefined;
+        payload.correo = formEditar.correo || undefined;
       } else {
         payload.razonSocial = formEditar.razonSocial;
         payload.nombreContacto = formEditar.nombreContacto || undefined;
@@ -679,12 +744,25 @@ export default function ClientesPage() {
                         {cli.Nombre_Contacto ? (
                           <div>
                             <span className="font-semibold text-slate-800 block">{cli.Nombre_Contacto}</span>
-                            {cli.Correo_Contacto && (
-                              <span className="text-[10px] text-slate-400 block">{cli.Correo_Contacto}</span>
+                            {(cli.Correo || cli.Correo_Contacto) && (
+                              <span className="text-[10px] text-slate-500 flex items-center gap-1 mt-0.5">
+                                <Mail className="w-2.5 h-2.5 text-slate-400" />
+                                {cli.Correo || cli.Correo_Contacto}
+                              </span>
                             )}
                           </div>
                         ) : (
-                          <span className="text-slate-400 italic">Titular particular</span>
+                          <div>
+                            <span className="font-medium text-slate-700 block">Titular particular</span>
+                            {cli.Correo ? (
+                              <span className="text-[10px] text-slate-500 flex items-center gap-1 mt-0.5">
+                                <Mail className="w-2.5 h-2.5 text-slate-400" />
+                                {cli.Correo}
+                              </span>
+                            ) : (
+                              <span className="text-[10px] text-slate-400 italic">Sin correo</span>
+                            )}
+                          </div>
                         )}
                       </td>
 
@@ -875,6 +953,50 @@ export default function ClientesPage() {
                 />
               </div>
 
+              <div>
+                <label className="block font-bold text-[#132B20] mb-1">Correo Electrónico (Para comprobantes)</label>
+                <input
+                  type="email"
+                  value={formParticular.correo}
+                  onChange={(e) => setFormParticular({ ...formParticular, correo: e.target.value })}
+                  placeholder="ejemplo@correo.cr"
+                  className="w-full px-3 py-2 bg-[#FAF7F0] border border-[#DFD5C4] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#2D5E46]"
+                />
+              </div>
+
+              {/* Credenciales de Acceso al Portal de Clientes */}
+              <div className="bg-[#FAF7F0] p-3.5 rounded-2xl border border-[#DFD5C4] space-y-2.5">
+                <div className="flex items-center gap-1.5 text-[#5C3622] font-bold">
+                  <ShieldCheck className="w-4 h-4 text-[#2D5E46]" />
+                  <span>Credenciales para el Portal Web del Cliente</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <div>
+                    <label className="block text-[11px] font-bold text-[#132B20] mb-0.5">Nombre de Usuario</label>
+                    <input
+                      type="text"
+                      value={formParticular.usuarioPortal}
+                      onChange={(e) => setFormParticular({ ...formParticular, usuarioPortal: e.target.value })}
+                      placeholder="cli.cedula"
+                      className="w-full px-3 py-1.5 bg-white border border-[#DFD5C4] rounded-xl text-xs font-mono text-[#132B20]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-[#132B20] mb-0.5">Contraseña de Acceso</label>
+                    <input
+                      type="text"
+                      value={formParticular.contrasenaPortal}
+                      onChange={(e) => setFormParticular({ ...formParticular, contrasenaPortal: e.target.value })}
+                      placeholder="Cliente2026!"
+                      className="w-full px-3 py-1.5 bg-white border border-[#DFD5C4] rounded-xl text-xs font-mono font-bold text-[#2D5E46]"
+                    />
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-500">
+                  * El cliente podrá iniciar sesión en la pantalla de acceso con este usuario y contraseña para ver sus facturas y estado de cuenta.
+                </p>
+              </div>
+
               <div className="pt-2 flex items-center justify-end gap-2 border-t border-slate-100">
                 <button
                   type="button"
@@ -1051,7 +1173,8 @@ export default function ClientesPage() {
       {/* ================= MODAL EDITAR CLIENTE ================= */}
       {modalEditarAbierto && clienteSeleccionado && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#132B20]/60 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl border border-[#DFD5C4] overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+          <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl border border-[#DFD5C4] overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            {/* Header del Modal */}
             <div className="bg-[#1A3D2F] text-white p-5 flex items-center justify-between">
               <div>
                 <h3 className="font-bold text-base flex items-center gap-2">
@@ -1059,7 +1182,7 @@ export default function ClientesPage() {
                   Editar Cliente #{clienteSeleccionado.Id_Cliente}
                 </h3>
                 <p className="text-xs text-slate-300 mt-0.5">
-                  {clienteSeleccionado.Numero_Identificacion} &bull; {clienteSeleccionado.Tipo_Cliente}
+                  <span className="font-bold text-amber-300">{clienteSeleccionado.Nombre_O_RazonSocial}</span> &bull; {clienteSeleccionado.Numero_Identificacion} &bull; {clienteSeleccionado.Tipo_Cliente}
                 </p>
               </div>
               <button
@@ -1070,141 +1193,310 @@ export default function ClientesPage() {
               </button>
             </div>
 
-            <form onSubmit={guardarEdicion} className="p-6 space-y-4 text-xs">
-              {clienteSeleccionado.Tipo_Cliente === 'Particular' ? (
-                <>
-                  <div>
-                    <label className="block font-bold text-[#132B20] mb-1">Nombre</label>
-                    <input
-                      type="text"
-                      value={formEditar.nombre}
-                      onChange={(e) => setFormEditar({ ...formEditar, nombre: e.target.value })}
-                      className="w-full px-3 py-2 bg-[#FAF7F0] border border-[#DFD5C4] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#2D5E46] font-semibold"
-                      required
-                    />
-                  </div>
+            {/* Selector de Pestañas: Datos Generales vs Condiciones de Crédito */}
+            <div className="flex border-b border-[#DFD5C4] bg-[#FAF7F0] px-5 pt-3 gap-2">
+              <button
+                type="button"
+                onClick={() => setPestanaEditar('DATOS')}
+                className={`pb-2.5 px-3 text-xs font-bold border-b-2 transition flex items-center gap-1.5 ${
+                  pestanaEditar === 'DATOS'
+                    ? 'border-[#2D5E46] text-[#132B20]'
+                    : 'border-transparent text-slate-500 hover:text-[#132B20]'
+                }`}
+              >
+                <User className="w-4 h-4" />
+                <span>Datos del Cliente</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setPestanaEditar('CREDITO')}
+                className={`pb-2.5 px-3 text-xs font-bold border-b-2 transition flex items-center gap-1.5 ${
+                  pestanaEditar === 'CREDITO'
+                    ? 'border-[#2D5E46] text-[#132B20]'
+                    : 'border-transparent text-slate-500 hover:text-[#132B20]'
+                }`}
+              >
+                <CreditCard className="w-4 h-4 text-amber-600" />
+                <span>Condiciones de Pago & Crédito</span>
+                {condicionesCliente.some((c) => c.Dias_Credito > 0 && c.Estado) && (
+                  <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+                )}
+              </button>
+            </div>
 
-                  <div className="grid grid-cols-2 gap-3">
+            {pestanaEditar === 'DATOS' ? (
+              /* FORMULARIO DE DATOS */
+              <form onSubmit={guardarEdicion} className="p-6 space-y-4 text-xs max-h-[70vh] overflow-y-auto">
+                <div className="bg-[#FAF7F0] border border-[#DFD5C4] rounded-xl p-3 text-[11px] text-[#5C3622]">
+                  Información cargada en vivo. Puede modificar los campos deseados o dejarlos intactos.
+                </div>
+
+                {clienteSeleccionado.Tipo_Cliente === 'Particular' ? (
+                  <>
                     <div>
-                      <label className="block font-bold text-[#132B20] mb-1">Primer Apellido</label>
+                      <label className="block font-bold text-[#132B20] mb-1">Nombre</label>
                       <input
                         type="text"
-                        value={formEditar.apellido1}
-                        onChange={(e) => setFormEditar({ ...formEditar, apellido1: e.target.value })}
-                        className="w-full px-3 py-2 bg-[#FAF7F0] border border-[#DFD5C4] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#2D5E46] font-semibold"
+                        value={formEditar.nombre}
+                        onChange={(e) => setFormEditar({ ...formEditar, nombre: e.target.value })}
+                        className="w-full px-3 py-2 bg-white border border-[#DFD5C4] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#2D5E46] font-semibold"
+                        required
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block font-bold text-[#132B20] mb-1">Primer Apellido</label>
+                        <input
+                          type="text"
+                          value={formEditar.apellido1}
+                          onChange={(e) => setFormEditar({ ...formEditar, apellido1: e.target.value })}
+                          className="w-full px-3 py-2 bg-white border border-[#DFD5C4] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#2D5E46] font-semibold"
+                          required
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block font-bold text-[#132B20] mb-1">Segundo Apellido</label>
+                        <input
+                          type="text"
+                          value={formEditar.apellido2}
+                          onChange={(e) => setFormEditar({ ...formEditar, apellido2: e.target.value })}
+                          className="w-full px-3 py-2 bg-white border border-[#DFD5C4] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#2D5E46]"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block font-bold text-[#132B20] mb-1">Correo Electrónico</label>
+                      <input
+                        type="email"
+                        value={formEditar.correo || ''}
+                        onChange={(e) => setFormEditar({ ...formEditar, correo: e.target.value })}
+                        placeholder="ejemplo@correo.com"
+                        className="w-full px-3 py-2 bg-white border border-[#DFD5C4] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#2D5E46]"
+                      />
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div>
+                      <label className="block font-bold text-[#132B20] mb-1">Razón Social</label>
+                      <input
+                        type="text"
+                        value={formEditar.razonSocial}
+                        onChange={(e) => setFormEditar({ ...formEditar, razonSocial: e.target.value })}
+                        className="w-full px-3 py-2 bg-white border border-[#DFD5C4] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#2D5E46] font-bold"
                         required
                       />
                     </div>
 
                     <div>
-                      <label className="block font-bold text-[#132B20] mb-1">Segundo Apellido</label>
+                      <label className="block font-bold text-[#132B20] mb-1">Nombre de Contacto</label>
                       <input
                         type="text"
-                        value={formEditar.apellido2}
-                        onChange={(e) => setFormEditar({ ...formEditar, apellido2: e.target.value })}
-                        className="w-full px-3 py-2 bg-[#FAF7F0] border border-[#DFD5C4] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#2D5E46]"
-                      />
-                    </div>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div>
-                    <label className="block font-bold text-[#132B20] mb-1">Razón Social</label>
-                    <input
-                      type="text"
-                      value={formEditar.razonSocial}
-                      onChange={(e) => setFormEditar({ ...formEditar, razonSocial: e.target.value })}
-                      className="w-full px-3 py-2 bg-[#FAF7F0] border border-[#DFD5C4] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#2D5E46] font-bold"
-                      required
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block font-bold text-[#132B20] mb-1">Nombre de Contacto</label>
-                    <input
-                      type="text"
-                      value={formEditar.nombreContacto}
-                      onChange={(e) => setFormEditar({ ...formEditar, nombreContacto: e.target.value })}
-                      className="w-full px-3 py-2 bg-[#FAF7F0] border border-[#DFD5C4] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#2D5E46]"
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block font-bold text-[#132B20] mb-1">Teléfono Contacto</label>
-                      <input
-                        type="text"
-                        value={formEditar.telefonoContacto}
-                        onChange={(e) => setFormEditar({ ...formEditar, telefonoContacto: e.target.value })}
-                        className="w-full px-3 py-2 bg-[#FAF7F0] border border-[#DFD5C4] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#2D5E46]"
+                        value={formEditar.nombreContacto}
+                        onChange={(e) => setFormEditar({ ...formEditar, nombreContacto: e.target.value })}
+                        className="w-full px-3 py-2 bg-white border border-[#DFD5C4] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#2D5E46]"
                       />
                     </div>
 
-                    <div>
-                      <label className="block font-bold text-[#132B20] mb-1">Correo Contacto</label>
-                      <input
-                        type="email"
-                        value={formEditar.correoContacto}
-                        onChange={(e) => setFormEditar({ ...formEditar, correoContacto: e.target.value })}
-                        className="w-full px-3 py-2 bg-[#FAF7F0] border border-[#DFD5C4] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#2D5E46]"
-                      />
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block font-bold text-[#132B20] mb-1">Teléfono Contacto</label>
+                        <input
+                          type="text"
+                          value={formEditar.telefonoContacto}
+                          onChange={(e) => setFormEditar({ ...formEditar, telefonoContacto: e.target.value })}
+                          className="w-full px-3 py-2 bg-white border border-[#DFD5C4] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#2D5E46]"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block font-bold text-[#132B20] mb-1">Correo Contacto</label>
+                        <input
+                          type="email"
+                          value={formEditar.correoContacto}
+                          onChange={(e) => setFormEditar({ ...formEditar, correoContacto: e.target.value })}
+                          className="w-full px-3 py-2 bg-white border border-[#DFD5C4] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#2D5E46]"
+                        />
+                      </div>
                     </div>
+                  </>
+                )}
+
+                <div>
+                  <label className="block font-bold text-[#132B20] mb-1">Teléfono General</label>
+                  <input
+                    type="text"
+                    value={formEditar.telefono}
+                    onChange={(e) => setFormEditar({ ...formEditar, telefono: e.target.value })}
+                    className="w-full px-3 py-2 bg-white border border-[#DFD5C4] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#2D5E46]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-[#132B20] mb-1">Dirección</label>
+                  <textarea
+                    value={formEditar.direccion}
+                    onChange={(e) => setFormEditar({ ...formEditar, direccion: e.target.value })}
+                    rows={2}
+                    className="w-full px-3 py-2 bg-white border border-[#DFD5C4] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#2D5E46]"
+                  />
+                </div>
+
+                {/* Restablecer Contraseña de Acceso al Portal */}
+                <div className="bg-[#FAF7F0] p-3 rounded-xl border border-[#DFD5C4] space-y-1.5">
+                  <label className="block font-bold text-[#132B20]">
+                    Restablecer Contraseña del Portal de Cliente (Opcional)
+                  </label>
+                  <input
+                    type="text"
+                    value={formEditar.contrasenaPortal || ''}
+                    onChange={(e) => setFormEditar({ ...formEditar, contrasenaPortal: e.target.value })}
+                    placeholder="Dejar en blanco para mantener la contraseña actual"
+                    className="w-full px-3 py-2 bg-white border border-[#DFD5C4] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#2D5E46] font-mono text-xs"
+                  />
+                  <p className="text-[10px] text-slate-500">
+                    Si el cliente olvidó su clave o desea una nueva, ingrésela aquí y haga clic en Guardar Cambios.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2 pt-2">
+                  <input
+                    type="checkbox"
+                    id="chkEstadoCliente"
+                    checked={formEditar.estado}
+                    onChange={(e) => setFormEditar({ ...formEditar, estado: e.target.checked })}
+                    className="w-4 h-4 rounded text-[#2D5E46] focus:ring-[#2D5E46]"
+                  />
+                  <label htmlFor="chkEstadoCliente" className="font-bold text-[#132B20] cursor-pointer">
+                    Cliente Activo para Facturación
+                  </label>
+                </div>
+
+                <div className="pt-3 flex items-center justify-end gap-2 border-t border-[#DFD5C4]">
+                  <button
+                    type="button"
+                    onClick={() => setModalEditarAbierto(false)}
+                    disabled={guardando}
+                    className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-xl font-semibold transition"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={guardando}
+                    className="px-5 py-2 bg-[#1A3D2F] hover:bg-[#132B20] text-white font-bold rounded-xl shadow-md transition disabled:opacity-50"
+                  >
+                    {guardando ? 'Guardando en SQL...' : 'Actualizar Cliente'}
+                  </button>
+                </div>
+              </form>
+            ) : (
+              /* PESTAÑA DE GESTIÓN DE CONDICIONES Y CRÉDITO (RF1.4 y SP 6, 7 y 8) */
+              <div className="p-6 space-y-4 text-xs max-h-[70vh] overflow-y-auto">
+                <div className="bg-amber-50 border border-amber-300 rounded-xl p-3 text-amber-900 leading-relaxed">
+                  <p className="font-bold flex items-center gap-1.5 mb-1 text-amber-800">
+                    <CreditCard className="w-4 h-4 shrink-0 text-amber-600" />
+                    Normativa de Crédito (Tesis RF1.4 / SP 6, 7 y 8):
+                  </p>
+                  <p className="text-[11px]">
+                    Un mismo cliente puede disponer <strong>simultáneamente de Contado y varias líneas de crédito</strong> (15, 30 o 45 días). Puede activar o deshabilitar cualquier condición para habilitar compras a crédito en el POS.
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <span className="font-bold text-[#132B20] block uppercase tracking-wider text-[11px]">
+                    Condiciones del Sistema para este Cliente:
+                  </span>
+
+                  <div className="divide-y divide-[#DFD5C4] border border-[#DFD5C4] rounded-xl overflow-hidden bg-white">
+                    {condicionesPagoCatalogo.map((cond) => {
+                      const asignacion = condicionesCliente.find((c) => c.Id_Condicion_Pago === cond.Id_Condicion_Pago);
+                      const estaHabilitada = asignacion ? asignacion.Estado : false;
+                      const esContado = cond.Dias_Credito === 0;
+
+                      return (
+                        <div key={cond.Id_Condicion_Pago} className="p-3.5 flex items-center justify-between gap-3 hover:bg-[#FAF7F0] transition">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-slate-800 text-xs">{cond.Nombre}</span>
+                              {estaHabilitada ? (
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                  Habilitada
+                                </span>
+                              ) : (
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-500">
+                                  No autorizada
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[11px] text-[#5C3622] mt-0.5">
+                              {esContado ? 'Pago inmediato en caja (Obligatoria)' : `Plazo de crédito: ${cond.Dias_Credito} días para cancelar factura`}
+                            </p>
+                          </div>
+
+                          <div>
+                            {esContado ? (
+                              <span className="text-[11px] font-bold text-slate-400 italic">Siempre Activa</span>
+                            ) : estaHabilitada ? (
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  try {
+                                    await api.delete(`/clientes/${clienteSeleccionado.Id_Cliente}/condiciones-pago/${cond.Id_Condicion_Pago}`);
+                                    showToast(`Línea de ${cond.Nombre} deshabilitada con éxito`, 'success');
+                                    const resCond = await api.get(`/clientes/${clienteSeleccionado.Id_Cliente}/condiciones-pago`);
+                                    setCondicionesCliente(resCond.data || []);
+                                    cargarDatos();
+                                  } catch (e) {
+                                    showToast(e.response?.data?.mensaje || 'Error al deshabilitar', 'error');
+                                  }
+                                }}
+                                className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg font-bold text-xs transition"
+                              >
+                                Deshabilitar
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  try {
+                                    await api.post(`/clientes/${clienteSeleccionado.Id_Cliente}/condiciones-pago`, {
+                                      idCondicionPago: cond.Id_Condicion_Pago,
+                                    });
+                                    showToast(`Línea de ${cond.Nombre} autorizada con éxito`, 'success');
+                                    const resCond = await api.get(`/clientes/${clienteSeleccionado.Id_Cliente}/condiciones-pago`);
+                                    setCondicionesCliente(resCond.data || []);
+                                    cargarDatos();
+                                  } catch (e) {
+                                    showToast(e.response?.data?.mensaje || 'Error al autorizar', 'error');
+                                  }
+                                }}
+                                className="px-3 py-1.5 bg-[#2D5E46] hover:bg-[#1A3D2F] text-white rounded-lg font-bold text-xs shadow-sm transition"
+                              >
+                                Autorizar Crédito
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
-                </>
-              )}
+                </div>
 
-              <div>
-                <label className="block font-bold text-[#132B20] mb-1">Teléfono General</label>
-                <input
-                  type="text"
-                  value={formEditar.telefono}
-                  onChange={(e) => setFormEditar({ ...formEditar, telefono: e.target.value })}
-                  className="w-full px-3 py-2 bg-[#FAF7F0] border border-[#DFD5C4] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#2D5E46]"
-                />
+                <div className="pt-3 flex items-center justify-end border-t border-[#DFD5C4]">
+                  <button
+                    type="button"
+                    onClick={() => setModalEditarAbierto(false)}
+                    className="px-5 py-2 bg-[#1A3D2F] text-white font-bold rounded-xl text-xs hover:bg-[#132B20] transition"
+                  >
+                    Listo / Cerrar
+                  </button>
+                </div>
               </div>
-
-              <div>
-                <label className="block font-bold text-[#132B20] mb-1">Dirección</label>
-                <textarea
-                  value={formEditar.direccion}
-                  onChange={(e) => setFormEditar({ ...formEditar, direccion: e.target.value })}
-                  rows={2}
-                  className="w-full px-3 py-2 bg-[#FAF7F0] border border-[#DFD5C4] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#2D5E46]"
-                />
-              </div>
-
-              <div className="flex items-center gap-2 pt-2">
-                <input
-                  type="checkbox"
-                  id="chkEstadoCliente"
-                  checked={formEditar.estado}
-                  onChange={(e) => setFormEditar({ ...formEditar, estado: e.target.checked })}
-                  className="w-4 h-4 rounded text-[#2D5E46] focus:ring-[#2D5E46]"
-                />
-                <label htmlFor="chkEstadoCliente" className="font-bold text-[#132B20] cursor-pointer">
-                  Cliente Activo para Facturación
-                </label>
-              </div>
-
-              <div className="pt-2 flex items-center justify-end gap-2 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={() => setModalEditarAbierto(false)}
-                  disabled={guardando}
-                  className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-xl font-semibold transition"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={guardando}
-                  className="px-5 py-2 bg-[#1A3D2F] hover:bg-[#132B20] text-white font-bold rounded-xl shadow-md transition disabled:opacity-50"
-                >
-                  {guardando ? 'Guardando en SQL...' : 'Actualizar Cliente'}
-                </button>
-              </div>
-            </form>
+            )}
           </div>
         </div>
       )}
@@ -1300,7 +1592,7 @@ export default function ClientesPage() {
                                   : 'bg-amber-50 text-amber-700 border border-amber-200'
                               }`}
                             >
-                              {op.Estado || 'Emitida'}
+                              {op.Estado || 'Pendiente'}
                             </span>
                           </td>
                         </tr>

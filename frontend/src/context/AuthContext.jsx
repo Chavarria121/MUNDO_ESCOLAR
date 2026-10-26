@@ -29,7 +29,30 @@ export function AuthProvider({ children }) {
       const res = await api.post('/auth/login', { nombreUsuario, contrasena });
       const data = res.data;
       const accessToken = data.accessToken;
-      const userData = { ...data.usuario, permisos: data.permisos || [], roles: data.usuario.roles || (data.permisos?.includes('SEGURIDAD_GESTIONAR') ? ['Administrador'] : ['Cajero']) };
+      const permisos = data.permisos || [];
+
+      // Verificar si el usuario autenticado corresponde a un Cliente (Actor Cliente de la Tesis)
+      let esCliente = false;
+      let clienteData = null;
+      try {
+        const portalRes = await api.get('/clientes/portal/mi-perfil', {
+          headers: { Authorization: `Bearer ${accessToken}` }
+        });
+        if (portalRes.data?.esCliente) {
+          esCliente = true;
+          clienteData = portalRes.data.perfil;
+        }
+      } catch (e) {}
+
+      const userData = {
+        ...data.usuario,
+        permisos,
+        roles: esCliente
+          ? ['Cliente']
+          : data.usuario.roles || (permisos.includes('SEGURIDAD_GESTIONAR') ? ['Administrador'] : ['Cajero']),
+        esCliente,
+        clienteData,
+      };
 
       localStorage.setItem('token', accessToken);
       localStorage.setItem('user', JSON.stringify(userData));

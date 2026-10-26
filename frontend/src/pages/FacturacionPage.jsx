@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Receipt,
   Search,
@@ -42,6 +43,13 @@ export default function FacturacionPage({ onNavigateToPos }) {
   // Modales
   const [modalDetalleAbierto, setModalDetalleAbierto] = useState(false);
   const [facturaSeleccionada, setFacturaSeleccionada] = useState(null);
+
+  useEffect(() => {
+    if (modalDetalleAbierto) {
+      document.body.classList.add('imprimiendo-modal');
+      return () => document.body.classList.remove('imprimiendo-modal');
+    }
+  }, [modalDetalleAbierto]);
   const [detalleVenta, setDetalleVenta] = useState(null);
   const [pagosFactura, setPagosFactura] = useState([]);
   const [cargandoDetalle, setCargandoDetalle] = useState(false);
@@ -54,7 +62,12 @@ export default function FacturacionPage({ onNavigateToPos }) {
   const [referenciaAbono, setReferenciaAbono] = useState('');
   const [procesandoPago, setProcesandoPago] = useState(false);
 
-  // Modal de Anulación
+  // Modal de Anulación de Pago Individual (SP_Pago_Anular)
+  const [pagoAAnular, setPagoAAnular] = useState(null);
+  const [motivoAnulacionPago, setMotivoAnulacionPago] = useState('');
+  const [procesandoAnulacionPago, setProcesandoAnulacionPago] = useState(false);
+
+  // Modal de Anulación de Factura
   const [modalAnulacionAbierto, setModalAnulacionAbierto] = useState(false);
   const [facturaAAnular, setFacturaAAnular] = useState(null);
   const [motivoAnulacion, setMotivoAnulacion] = useState('');
@@ -514,8 +527,8 @@ export default function FacturacionPage({ onNavigateToPos }) {
       </div>
 
       {/* MODAL DETALLE DE FACTURA FISCAL & HISTORIAL DE PAGOS */}
-      {modalDetalleAbierto && facturaSeleccionada && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#132B20]/60 backdrop-blur-sm p-4">
+      {modalDetalleAbierto && facturaSeleccionada && createPortal(
+        <div className="modal-impresion-activa fixed inset-0 z-50 flex items-center justify-center bg-[#132B20]/60 backdrop-blur-sm p-4 overflow-y-auto" onClick={(e) => { if (e.target === e.currentTarget) setModalDetalleAbierto(false); }}>
           <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] shadow-2xl border border-[#DFD5C4] overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-150">
             {/* Header Modal */}
             <div className="bg-[#132B20] text-white p-5 flex items-center justify-between">
@@ -530,7 +543,7 @@ export default function FacturacionPage({ onNavigateToPos }) {
               </div>
               <button
                 onClick={() => setModalDetalleAbierto(false)}
-                className="p-1 text-slate-400 hover:text-white rounded-lg transition"
+                className="p-1 text-slate-400 hover:text-white rounded-lg transition no-print"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -650,24 +663,52 @@ export default function FacturacionPage({ onNavigateToPos }) {
                               <th className="py-2 px-3">Fecha</th>
                               <th className="py-2 px-3">Método de Pago</th>
                               <th className="py-2 px-3">Referencia</th>
+                              <th className="py-2 px-3">Estado</th>
                               <th className="py-2 px-3 text-right">Monto Pagado</th>
+                              <th className="py-2 px-3 text-center">Acción</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-100">
-                            {pagosFactura.map((pago) => (
-                              <tr key={pago.Id_Pago}>
-                                <td className="py-2 px-3">
-                                  {new Date(pago.Fecha_Pago).toLocaleDateString('es-CR')}
-                                </td>
-                                <td className="py-2 px-3 font-semibold text-slate-800">{pago.Metodo_Pago}</td>
-                                <td className="py-2 px-3 font-mono text-[11px] text-[#5C3622]">
-                                  {pago.Numero_Referencia || 'N/A'}
-                                </td>
-                                <td className="py-2 px-3 text-right font-bold text-emerald-700">
-                                  ₡{Number(pago.Monto_Pagado).toLocaleString('es-CR')}
-                                </td>
-                              </tr>
-                            ))}
+                            {pagosFactura.map((pago) => {
+                              const esActivo = pago.Estado === true || pago.Estado === 1;
+                              return (
+                                <tr key={pago.Id_Pago} className={!esActivo ? 'opacity-60 bg-slate-50' : ''}>
+                                  <td className="py-2 px-3">
+                                    {new Date(pago.Fecha_Pago).toLocaleDateString('es-CR')}
+                                  </td>
+                                  <td className="py-2 px-3 font-semibold text-slate-800">{pago.Metodo_Pago}</td>
+                                  <td className="py-2 px-3 font-mono text-[11px] text-[#5C3622]">
+                                    {pago.Numero_Referencia || 'N/A'}
+                                  </td>
+                                  <td className="py-2 px-3">
+                                    <span
+                                      className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                        esActivo
+                                          ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                                          : 'bg-rose-100 text-rose-800 border border-rose-200'
+                                      }`}
+                                    >
+                                      {esActivo ? 'Activo' : 'Anulado'}
+                                    </span>
+                                  </td>
+                                  <td className={`py-2 px-3 text-right font-bold ${esActivo ? 'text-emerald-700' : 'text-slate-400 line-through'}`}>
+                                    ₡{Number(pago.Monto_Pagado).toLocaleString('es-CR')}
+                                  </td>
+                                  <td className="py-2 px-3 text-center">
+                                    {esActivo && (
+                                      <button
+                                        onClick={() => abrirAnularPago(pago)}
+                                        title="Anular abono (SP_Pago_Anular)"
+                                        className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg transition no-print"
+                                      >
+                                        <RotateCcw className="w-3 h-3" />
+                                        <span>Anular</span>
+                                      </button>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })}
                           </tbody>
                         </table>
                       </div>
@@ -678,7 +719,7 @@ export default function FacturacionPage({ onNavigateToPos }) {
             </div>
 
             {/* Footer Modal */}
-            <div className="p-4 bg-[#FAF7F0] border-t border-[#DFD5C4] flex items-center justify-between">
+            <div className="p-4 bg-[#FAF7F0] border-t border-[#DFD5C4] flex items-center justify-between no-print">
               <button
                 onClick={() => window.print()}
                 className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-[#132B20] bg-white border border-[#DFD5C4] rounded-xl hover:bg-slate-100 transition"
@@ -695,7 +736,8 @@ export default function FacturacionPage({ onNavigateToPos }) {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* MODAL PARA REGISTRAR ABONO / PAGO */}
@@ -839,6 +881,18 @@ export default function FacturacionPage({ onNavigateToPos }) {
                 </p>
               </div>
 
+              {Number(facturaAAnular.Total_Pagado) > 0 && (
+                <div className="bg-amber-50 border border-amber-300 rounded-xl p-3.5 text-xs text-amber-900 space-y-1">
+                  <p className="font-bold flex items-center gap-1.5 text-amber-800">
+                    <AlertTriangle className="w-4 h-4 shrink-0 text-amber-600" />
+                    Restricción Contable (Doc. Cap. 17.3, Pág. 381):
+                  </p>
+                  <p>
+                    Esta factura registra un total de <strong>₡{Number(facturaAAnular.Total_Pagado).toLocaleString('es-CR')}</strong> en pagos activos. De acuerdo con la normativa contable, debe anular primero individualmente sus pagos en el Historial de Abonos antes de poder anular la factura.
+                  </p>
+                </div>
+              )}
+
               <div>
                 <label className="block text-xs font-bold text-[#132B20] mb-1">
                   Motivo de la Anulación / Devolución *
@@ -880,6 +934,78 @@ export default function FacturacionPage({ onNavigateToPos }) {
                     <span>Ejecutar Anulación</span>
                   </>
                 )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL PARA ANULAR PAGO INDIVIDUAL (SP_Pago_Anular) */}
+      {pagoAAnular && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-[#132B20]/60 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl border border-[#DFD5C4] overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="bg-rose-600 text-white p-5 flex items-center justify-between">
+              <div>
+                <h3 className="font-bold text-base flex items-center gap-2">
+                  <RotateCcw className="w-5 h-5 text-white" />
+                  Anular Abono / Pago #{pagoAAnular.Id_Pago}
+                </h3>
+                <p className="text-xs text-rose-100 mt-0.5">
+                  Monto: ₡{Number(pagoAAnular.Monto_Pagado).toLocaleString('es-CR')} • {pagoAAnular.Metodo_Pago}
+                </p>
+              </div>
+              <button
+                onClick={() => setPagoAAnular(null)}
+                className="p-1 text-rose-200 hover:text-white rounded-lg transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div className="bg-rose-50 border border-rose-200 rounded-xl p-3 text-xs text-rose-800">
+                <p className="font-bold flex items-center gap-1.5 mb-1">
+                  <AlertTriangle className="w-4 h-4 shrink-0 text-rose-600" />
+                  Reversión Contable (SP_Pago_Anular):
+                </p>
+                <p>
+                  El pago quedará marcado como anulado y el importe se restituirá al saldo pendiente de la factura. Conforme a la normativa, el motivo es obligatorio y quedará auditado en la Bitácora.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-[#132B20] mb-1">
+                  Motivo de Anulación del Abono *
+                </label>
+                <textarea
+                  value={motivoAnulacionPago}
+                  onChange={(e) => setMotivoAnulacionPago(e.target.value)}
+                  placeholder="Ej. Error en el monto registrado, duplicidad reportada por el cliente, etc."
+                  rows={3}
+                  className="w-full text-xs p-3 bg-[#FAF7F0] border border-[#DFD5C4] rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500"
+                />
+              </div>
+            </div>
+
+            <div className="p-4 bg-[#FAF7F0] border-t border-[#DFD5C4] flex items-center justify-end gap-2">
+              <button
+                onClick={() => setPagoAAnular(null)}
+                disabled={procesandoAnulacionPago}
+                className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-200 rounded-xl transition"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={procesarAnulacionPago}
+                disabled={procesandoAnulacionPago}
+                className="flex items-center gap-2 px-5 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl shadow-sm transition disabled:opacity-50"
+              >
+                {procesandoAnulacionPago ? (
+                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                ) : (
+                  <RotateCcw className="w-4 h-4" />
+                )}
+                <span>Confirmar Anulación de Pago</span>
               </button>
             </div>
           </div>

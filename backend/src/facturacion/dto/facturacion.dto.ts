@@ -35,7 +35,7 @@ export class ConsultarFacturasDto {
   @Type(() => Number)
   idCliente?: number;
 
-  @ApiPropertyOptional({ example: 1, description: '1=Emitida, 2=Pagada, 3=Parcial, 4=Anulada' })
+  @ApiPropertyOptional({ example: 1, description: '1=Pendiente, 2=Parcial, 3=Pagada, 4=Anulada' })
   @IsInt()
   @IsOptional()
   @Type(() => Number)

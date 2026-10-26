@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Truck,
   Search,
@@ -18,7 +19,12 @@ import {
   DollarSign,
   Trash2,
   AlertTriangle,
-  ArrowRight
+  ArrowRight,
+  Edit2,
+  Mail,
+  Phone,
+  MapPin,
+  Sparkles
 } from 'lucide-react';
 import api from '../api/client';
 import { useAuth } from '../context/AuthContext';
@@ -41,6 +47,13 @@ export default function ComprasPage() {
   const [modalNuevaCompraAbierto, setModalNuevaCompraAbierto] = useState(false);
   const [modalDetalleAbierto, setModalDetalleAbierto] = useState(false);
   const [compraSeleccionada, setCompraSeleccionada] = useState(null);
+
+  useEffect(() => {
+    if (modalDetalleAbierto) {
+      document.body.classList.add('imprimiendo-modal');
+      return () => document.body.classList.remove('imprimiendo-modal');
+    }
+  }, [modalDetalleAbierto]);
   const [cargandoDetalle, setCargandoDetalle] = useState(false);
 
   const [modalAnulacionAbierto, setModalAnulacionAbierto] = useState(false);
@@ -48,6 +61,246 @@ export default function ComprasPage() {
   const [motivoAnulacion, setMotivoAnulacion] = useState('');
 
   const [modalProveedoresAbierto, setModalProveedoresAbierto] = useState(false);
+
+  // Gestión y Registro de Proveedores (Tablas 13.12, 13.13, 13.14)
+  const [filtroProveedor, setFiltroProveedor] = useState('');
+  const [modalCrearProveedorAbierto, setModalCrearProveedorAbierto] = useState(false);
+  const [tipoNuevoProveedor, setTipoNuevoProveedor] = useState('institucional'); // 'institucional' | 'particular'
+  const [consultandoPadron, setConsultandoPadron] = useState(false);
+
+  const [formProveedorParticular, setFormProveedorParticular] = useState({
+    identificacion: '',
+    nombre: '',
+    apellido1: '',
+    apellido2: '',
+    correo: '',
+    telefono: '',
+    direccion: '',
+  });
+
+  const [formProveedorInstitucional, setFormProveedorInstitucional] = useState({
+    cedulaJuridica: '',
+    razonSocial: '',
+    nombreContacto: '',
+    telefonoContacto: '',
+    correoContacto: '',
+    correo: '',
+    telefono: '',
+    direccion: '',
+  });
+
+  const [modalEditarProveedorAbierto, setModalEditarProveedorAbierto] = useState(false);
+  const [proveedorAEditar, setProveedorAEditar] = useState(null);
+  const [formEditarProveedor, setFormEditarProveedor] = useState({
+    nombre: '',
+    apellido1: '',
+    apellido2: '',
+    razonSocial: '',
+    nombreContacto: '',
+    telefonoContacto: '',
+    correoContacto: '',
+    correo: '',
+    telefono: '',
+    direccion: '',
+    estado: true,
+  });
+
+  // Consulta automática TSE para Proveedor Particular (9 dígitos)
+  const consultarTseProveedor = async (cedulaParam) => {
+    const cedula = (cedulaParam || formProveedorParticular.identificacion || '').trim();
+    const limpia = cedula.replace(/\D/g, '');
+    if (!limpia || limpia.length < 8) {
+      showToast('Digita al menos 9 dígitos de la cédula para consultar el padrón del TSE', 'warning');
+      return;
+    }
+    setConsultandoPadron(true);
+    try {
+      const res = await api.get(`/clientes/tse/${limpia}`);
+      if (res.data?.encontrado) {
+        setFormProveedorParticular((prev) => ({
+          ...prev,
+          identificacion: res.data.identificacionFormateada || prev.identificacion,
+          nombre: res.data.nombre || prev.nombre,
+          apellido1: res.data.apellido1 || prev.apellido1,
+          apellido2: res.data.apellido2 || prev.apellido2,
+        }));
+        showToast(`¡TSE Verificado! ${res.data.nombreCompleto}`, 'success');
+      } else {
+        showToast(res.data?.mensaje || 'Cédula no localizada en el padrón del TSE', 'warning');
+      }
+    } catch (err) {
+      console.error('Error consultando TSE:', err);
+      showToast('Error de comunicación con el servicio TSE', 'error');
+    } finally {
+      setConsultandoPadron(false);
+    }
+  };
+
+  // Consulta automática Hacienda para Proveedor Institucional (10 dígitos)
+  const consultarHaciendaProveedor = async (cedulaParam) => {
+    const cedula = (cedulaParam || formProveedorInstitucional.cedulaJuridica || '').trim();
+    const limpia = cedula.replace(/\D/g, '');
+    if (!limpia || limpia.length < 9) {
+      showToast('Digita los 10 dígitos de la cédula jurídica para consultar Tributación Directa', 'warning');
+      return;
+    }
+    setConsultandoPadron(true);
+    try {
+      const res = await api.get(`/clientes/tse/${limpia}`);
+      if (res.data?.encontrado) {
+        setFormProveedorInstitucional((prev) => ({
+          ...prev,
+          cedulaJuridica: res.data.cedulaJuridica || prev.cedulaJuridica,
+          razonSocial: res.data.razonSocial || prev.razonSocial,
+        }));
+        showToast(`¡Hacienda Verificado! ${res.data.razonSocial}`, 'success');
+      } else {
+        showToast(res.data?.mensaje || 'Cédula jurídica no localizada en Tributación', 'warning');
+      }
+    } catch (err) {
+      console.error('Error consultando Hacienda:', err);
+      showToast('Error de comunicación con el servicio de Hacienda', 'error');
+    } finally {
+      setConsultandoPadron(false);
+    }
+  };
+
+  const abrirCrearProveedor = (tipo = 'institucional') => {
+    setTipoNuevoProveedor(tipo);
+    setFormProveedorParticular({
+      identificacion: '',
+      nombre: '',
+      apellido1: '',
+      apellido2: '',
+      correo: '',
+      telefono: '',
+      direccion: '',
+    });
+    setFormProveedorInstitucional({
+      cedulaJuridica: '',
+      razonSocial: '',
+      nombreContacto: '',
+      telefonoContacto: '',
+      correoContacto: '',
+      correo: '',
+      telefono: '',
+      direccion: '',
+    });
+    setModalCrearProveedorAbierto(true);
+  };
+
+  const guardarNuevoProveedor = async (e) => {
+    e.preventDefault();
+    setGuardando(true);
+    try {
+      if (tipoNuevoProveedor === 'particular') {
+        if (!formProveedorParticular.identificacion.trim() || !formProveedorParticular.nombre.trim() || !formProveedorParticular.correo.trim()) {
+          showToast('Complete identificación, nombre y correo del proveedor', 'warning');
+          setGuardando(false);
+          return;
+        }
+        await api.post('/proveedores/particular', {
+          identificacion: formProveedorParticular.identificacion.trim(),
+          nombre: formProveedorParticular.nombre.trim(),
+          apellido1: formProveedorParticular.apellido1.trim() || 'N/A',
+          apellido2: formProveedorParticular.apellido2.trim() || undefined,
+          correo: formProveedorParticular.correo.trim(),
+          telefono: formProveedorParticular.telefono.trim() || '2666-0000',
+          direccion: formProveedorParticular.direccion.trim() || 'Liberia, Guanacaste',
+        });
+      } else {
+        if (!formProveedorInstitucional.cedulaJuridica.trim() || !formProveedorInstitucional.razonSocial.trim() || !formProveedorInstitucional.correo.trim()) {
+          showToast('Complete cédula jurídica, razón social y correo del proveedor', 'warning');
+          setGuardando(false);
+          return;
+        }
+        await api.post('/proveedores/institucional', {
+          cedulaJuridica: formProveedorInstitucional.cedulaJuridica.trim(),
+          razonSocial: formProveedorInstitucional.razonSocial.trim(),
+          nombreContacto: formProveedorInstitucional.nombreContacto.trim() || 'Encargado de Ventas',
+          telefonoContacto: formProveedorInstitucional.telefonoContacto.trim() || '2666-0000',
+          correoContacto: formProveedorInstitucional.correoContacto.trim() || formProveedorInstitucional.correo.trim(),
+          correo: formProveedorInstitucional.correo.trim(),
+          telefono: formProveedorInstitucional.telefono.trim() || '2666-0000',
+          direccion: formProveedorInstitucional.direccion.trim() || 'Liberia, Guanacaste',
+        });
+      }
+      showToast('Proveedor registrado exitosamente en 3FN', 'success');
+      setModalCrearProveedorAbierto(false);
+      cargarDatos();
+    } catch (err) {
+      console.error('Error registrando proveedor:', err);
+      showToast(err.response?.data?.message || err.response?.data?.mensaje || 'Error al registrar proveedor', 'error');
+    } finally {
+      setGuardando(false);
+    }
+  };
+
+  const abrirEditarProveedor = (prov) => {
+    setProveedorAEditar(prov);
+    setFormEditarProveedor({
+      nombre: prov.Nombre || '',
+      apellido1: prov.Apellido1 || '',
+      apellido2: prov.Apellido2 || '',
+      razonSocial: prov.Razon_Social || prov.Nombre_O_RazonSocial || '',
+      nombreContacto: prov.Nombre_Contacto || '',
+      telefonoContacto: prov.Telefono_Contacto || '',
+      correoContacto: prov.Correo_Contacto || '',
+      correo: prov.Correo || prov.Correo_Contacto || '',
+      telefono: prov.Telefono || prov.Telefono_Contacto || '',
+      direccion: prov.Direccion || '',
+      estado: prov.Estado ?? true,
+    });
+    setModalEditarProveedorAbierto(true);
+  };
+
+  const guardarEdicionProveedor = async (e) => {
+    e.preventDefault();
+    if (!proveedorAEditar) return;
+    setGuardando(true);
+    try {
+      const payload = {
+        correo: formEditarProveedor.correo.trim(),
+        telefono: formEditarProveedor.telefono.trim(),
+        direccion: formEditarProveedor.direccion.trim(),
+        estado: Boolean(formEditarProveedor.estado),
+      };
+      if (proveedorAEditar.Tipo_Proveedor === 'Particular') {
+        payload.nombre = formEditarProveedor.nombre.trim() || undefined;
+        payload.apellido1 = formEditarProveedor.apellido1.trim() || undefined;
+        payload.apellido2 = formEditarProveedor.apellido2.trim() || undefined;
+      } else {
+        payload.razonSocial = formEditarProveedor.razonSocial.trim() || undefined;
+        payload.nombreContacto = formEditarProveedor.nombreContacto.trim() || undefined;
+        payload.telefonoContacto = formEditarProveedor.telefonoContacto.trim() || undefined;
+        payload.correoContacto = formEditarProveedor.correoContacto.trim() || undefined;
+      }
+
+      await api.put(`/proveedores/${proveedorAEditar.Id_Proveedor}`, payload);
+      showToast('Proveedor actualizado con éxito', 'success');
+      setModalEditarProveedorAbierto(false);
+      cargarDatos();
+    } catch (err) {
+      console.error('Error actualizando proveedor:', err);
+      showToast(err.response?.data?.message || err.response?.data?.mensaje || 'Error al actualizar proveedor', 'error');
+    } finally {
+      setGuardando(false);
+    }
+  };
+
+  const proveedoresFiltrados = useMemo(() => {
+    if (!filtroProveedor.trim()) return proveedores;
+    const q = filtroProveedor.toLowerCase().trim();
+    return proveedores.filter(
+      (p) =>
+        (p.Nombre_O_RazonSocial || '').toLowerCase().includes(q) ||
+        (p.Numero_Identificacion || '').toLowerCase().includes(q) ||
+        (p.Nombre_Contacto || '').toLowerCase().includes(q) ||
+        (p.Correo || '').toLowerCase().includes(q) ||
+        (p.Correo_Contacto || '').toLowerCase().includes(q),
+    );
+  }, [proveedores, filtroProveedor]);
+
 
   // Formulario Nueva Orden de Compra
   const [proveedorSeleccionadoId, setProveedorSeleccionadoId] = useState(1);
@@ -709,8 +962,8 @@ export default function ComprasPage() {
       )}
 
       {/* ================= MODAL DETALLE DE COMPRA ================= */}
-      {modalDetalleAbierto && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#132B20]/60 backdrop-blur-sm p-4">
+      {modalDetalleAbierto && createPortal(
+        <div className="modal-impresion-activa fixed inset-0 z-50 flex items-center justify-center bg-[#132B20]/60 backdrop-blur-sm p-4 overflow-y-auto" onClick={(e) => { if (e.target === e.currentTarget) setModalDetalleAbierto(false); }}>
           <div className="bg-white rounded-2xl max-w-xl w-full max-h-[85vh] shadow-2xl border border-[#DFD5C4] overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-150">
             <div className="bg-[#132B20] text-white p-5 flex items-center justify-between">
               <div>
@@ -724,7 +977,7 @@ export default function ComprasPage() {
               </div>
               <button
                 onClick={() => setModalDetalleAbierto(false)}
-                className="p-1 text-slate-400 hover:text-white rounded-lg transition"
+                className="p-1 text-slate-400 hover:text-white rounded-lg transition no-print"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -791,7 +1044,7 @@ export default function ComprasPage() {
               )}
             </div>
 
-            <div className="p-4 bg-[#FAF7F0] border-t border-[#DFD5C4] flex items-center justify-between">
+            <div className="p-4 bg-[#FAF7F0] border-t border-[#DFD5C4] flex items-center justify-between no-print">
               <button
                 onClick={() => window.print()}
                 className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-[#132B20] bg-white border border-[#DFD5C4] rounded-xl hover:bg-slate-100 transition"
@@ -808,7 +1061,8 @@ export default function ComprasPage() {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* ================= MODAL ANULACIÓN DE COMPRA ================= */}
@@ -870,77 +1124,620 @@ export default function ComprasPage() {
         </div>
       )}
 
-      {/* ================= MODAL DIRECTORIO PROVEEDORES ================= */}
+      {/* ================= MODAL DIRECTORIO Y GESTIÓN DE PROVEEDORES ================= */}
       {modalProveedoresAbierto && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#132B20]/60 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-2xl max-w-3xl w-full max-h-[85vh] shadow-2xl border border-[#DFD5C4] overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-150">
+          <div className="bg-white rounded-2xl max-w-5xl w-full max-h-[90vh] shadow-2xl border border-[#DFD5C4] overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-150">
             <div className="bg-[#132B20] text-white p-5 flex items-center justify-between">
               <div>
                 <h3 className="font-bold text-base flex items-center gap-2">
-                  <Building className="w-5 h-5 text-blue-400" />
-                  Directorio de Proveedores Homologados
+                  <Building className="w-5 h-5 text-amber-400" />
+                  Directorio y Catálogo de Proveedores Homologados
                 </h3>
-                <p className="text-xs text-slate-400 mt-0.5">
-                  Proveedores Particulares e Institucionales
+                <p className="text-xs text-slate-300 mt-0.5">
+                  Gestión integral de Proveedores Particulares e Institucionales (Tablas 13.12, 13.13, 13.14)
                 </p>
               </div>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => abrirCrearProveedor('institucional')}
+                  className="px-3.5 py-1.5 bg-[#C05A3E] hover:bg-[#A94E35] text-white font-bold rounded-xl text-xs shadow-sm flex items-center gap-1.5 transition"
+                >
+                  <Plus className="w-4 h-4" />
+                  + Registrar Proveedor
+                </button>
+                <button
+                  onClick={() => setModalProveedoresAbierto(false)}
+                  className="p-1 text-slate-400 hover:text-white rounded-lg transition"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Barra de Filtro */}
+            <div className="p-4 bg-[#FAF7F0] border-b border-[#DFD5C4] flex items-center justify-between gap-4">
+              <div className="relative flex-1 max-w-md">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={filtroProveedor}
+                  onChange={(e) => setFiltroProveedor(e.target.value)}
+                  placeholder="Buscar por razón social, cédula, contacto o correo..."
+                  className="w-full pl-9 pr-4 py-2 bg-white border border-[#DFD5C4] rounded-xl text-xs text-[#132B20] placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#2D5E46]"
+                />
+              </div>
+              <span className="text-xs font-semibold text-[#5C3622]">
+                Mostrando {proveedoresFiltrados.length} de {proveedores.length} proveedores
+              </span>
+            </div>
+
+            <div className="p-5 overflow-y-auto flex-1 text-xs">
+              <div className="border border-[#DFD5C4] rounded-xl overflow-hidden shadow-sm">
+                <table className="w-full text-left">
+                  <thead className="bg-[#FAF7F0] text-[#5C3622] font-bold border-b border-[#DFD5C4] uppercase text-[11px] tracking-wider">
+                    <tr>
+                      <th className="py-2.5 px-3">Proveedor / Razón Social</th>
+                      <th className="py-2.5 px-3">Tipo</th>
+                      <th className="py-2.5 px-3">Identificación</th>
+                      <th className="py-2.5 px-3">Contacto Directo</th>
+                      <th className="py-2.5 px-3">Correo Electrónico</th>
+                      <th className="py-2.5 px-3">Teléfono</th>
+                      <th className="py-2.5 px-3">Dirección</th>
+                      <th className="py-2.5 px-3 text-center">Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 font-medium text-[#132B20]">
+                    {proveedoresFiltrados.map((prov) => {
+                      const esInst = prov.Tipo_Proveedor === 'Institucional';
+                      return (
+                        <tr key={prov.Id_Proveedor} className="hover:bg-[#FAF7F0]/80 transition-colors">
+                          <td className="py-2.5 px-3">
+                            <span className="font-bold text-[#132B20] block">{prov.Nombre_O_RazonSocial}</span>
+                            <span className="text-[10px] text-slate-400">ID #{prov.Id_Proveedor}</span>
+                          </td>
+                          <td className="py-2.5 px-3 whitespace-nowrap">
+                            <span
+                              className={`px-2 py-0.5 rounded-full text-[10px] font-bold inline-flex items-center gap-1 ${
+                                esInst
+                                  ? 'bg-amber-50 text-amber-800 border border-amber-200'
+                                  : 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                              }`}
+                            >
+                              {esInst ? <Building className="w-3 h-3" /> : <User className="w-3 h-3" />}
+                              {prov.Tipo_Proveedor}
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-3 font-mono font-bold text-[#5C3622] whitespace-nowrap">
+                            {prov.Numero_Identificacion}
+                          </td>
+                          <td className="py-2.5 px-3">
+                            {prov.Nombre_Contacto ? (
+                              <div>
+                                <span className="font-semibold text-slate-800 block">{prov.Nombre_Contacto}</span>
+                                {prov.Telefono_Contacto && (
+                                  <span className="text-[10px] text-slate-500 block">{prov.Telefono_Contacto}</span>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-slate-400 italic">Contacto directo</span>
+                            )}
+                          </td>
+                          <td className="py-2.5 px-3">
+                            <span className="text-slate-700 font-medium flex items-center gap-1">
+                              <Mail className="w-3 h-3 text-slate-400 shrink-0" />
+                              {prov.Correo || prov.Correo_Contacto || 'N/A'}
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-3 whitespace-nowrap">
+                            <span className="text-slate-700 flex items-center gap-1">
+                              <Phone className="w-3 h-3 text-slate-400 shrink-0" />
+                              {prov.Telefono || prov.Telefono_Contacto || 'N/A'}
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-3 max-w-[180px] truncate" title={prov.Direccion}>
+                            <span className="text-slate-600 flex items-center gap-1">
+                              <MapPin className="w-3 h-3 text-slate-400 shrink-0" />
+                              {prov.Direccion || 'Sin dirección'}
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-3 text-center whitespace-nowrap">
+                            <button
+                              type="button"
+                              onClick={() => abrirEditarProveedor(prov)}
+                              className="p-1.5 text-slate-500 hover:text-[#132B20] hover:bg-slate-100 rounded-lg transition"
+                              title="Editar Proveedor"
+                            >
+                              <Edit2 className="w-4 h-4" />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="p-4 bg-[#FAF7F0] border-t border-[#DFD5C4] flex items-center justify-between">
+              <span className="text-xs text-slate-500">
+                Padrón Nacional y Tributación Directa vinculados para validación automática.
+              </span>
               <button
                 onClick={() => setModalProveedoresAbierto(false)}
+                className="px-4 py-2 bg-[#132B20] text-white font-bold rounded-xl text-xs hover:bg-[#1A3D2F] transition"
+              >
+                Cerrar Directorio
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ================= MODAL REGISTRAR NUEVO PROVEEDOR (PARTICULAR O INSTITUCIONAL) ================= */}
+      {modalCrearProveedorAbierto && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#132B20]/60 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl max-w-xl w-full max-h-[90vh] shadow-2xl border border-[#DFD5C4] overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-150">
+            <div className="bg-[#132B20] text-white p-5 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-amber-400/20 border border-amber-400/30 flex items-center justify-center text-amber-400 font-bold">
+                  <Building className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-base">Registrar Proveedor Homologado</h3>
+                  <p className="text-xs text-slate-300">
+                    {tipoNuevoProveedor === 'institucional'
+                      ? 'Persona Jurídica / Empresa Distribuidora (Tabla 13.14)'
+                      : 'Persona Física / Proveedor Particular (Tabla 13.13)'}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setModalCrearProveedorAbierto(false)}
                 className="p-1 text-slate-400 hover:text-white rounded-lg transition"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="p-6 overflow-y-auto flex-1 text-xs">
-              <div className="border border-[#DFD5C4] rounded-xl overflow-hidden">
-                <table className="w-full text-left">
-                  <thead className="bg-[#FAF7F0] text-[#5C3622] font-bold border-b border-[#DFD5C4]">
-                    <tr>
-                      <th className="py-2.5 px-3">Razón Social / Nombre</th>
-                      <th className="py-2.5 px-3">Tipo</th>
-                      <th className="py-2.5 px-3">Identificación</th>
-                      <th className="py-2.5 px-3">Contacto</th>
-                      <th className="py-2.5 px-3">Teléfono</th>
-                      <th className="py-2.5 px-3">Dirección</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 font-medium text-[#132B20]">
-                    {proveedores.map((prov) => (
-                      <tr key={prov.Id_Proveedor} className="hover:bg-[#FAF7F0]/80">
-                        <td className="py-2.5 px-3 font-bold text-[#132B20]">{prov.Nombre_O_RazonSocial}</td>
-                        <td className="py-2.5 px-3">
-                          <span
-                            className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
-                              prov.Tipo_Proveedor === 'Institucional'
-                                ? 'bg-amber-100 text-amber-800'
-                                : 'bg-slate-100 text-slate-600'
-                            }`}
-                          >
-                            {prov.Tipo_Proveedor}
-                          </span>
-                        </td>
-                        <td className="py-2.5 px-3 font-mono">{prov.Numero_Identificacion}</td>
-                        <td className="py-2.5 px-3">{prov.Nombre_Contacto || 'N/A'}</td>
-                        <td className="py-2.5 px-3">{prov.Telefono || prov.Telefono_Contacto || 'N/A'}</td>
-                        <td className="py-2.5 px-3 max-w-[200px] truncate" title={prov.Direccion}>
-                          {prov.Direccion}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            <div className="p-4 bg-[#FAF7F0] border-t border-[#DFD5C4] flex justify-end">
+            {/* Selector de Pestañas */}
+            <div className="flex border-b border-[#DFD5C4] bg-[#FAF7F0] p-1.5 gap-2 text-xs font-bold">
               <button
-                onClick={() => setModalProveedoresAbierto(false)}
-                className="px-4 py-2 bg-[#132B20] text-white font-bold rounded-xl text-xs hover:bg-[#1A3D2F] transition"
+                type="button"
+                onClick={() => setTipoNuevoProveedor('institucional')}
+                className={`flex-1 py-2 px-3 rounded-xl flex items-center justify-center gap-2 transition ${
+                  tipoNuevoProveedor === 'institucional'
+                    ? 'bg-white text-[#132B20] shadow-sm border border-[#DFD5C4]'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
               >
-                Cerrar
+                <Building className="w-4 h-4 text-amber-600" />
+                Institucional / Empresa
+              </button>
+              <button
+                type="button"
+                onClick={() => setTipoNuevoProveedor('particular')}
+                className={`flex-1 py-2 px-3 rounded-xl flex items-center justify-center gap-2 transition ${
+                  tipoNuevoProveedor === 'particular'
+                    ? 'bg-white text-[#132B20] shadow-sm border border-[#DFD5C4]'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                <User className="w-4 h-4 text-emerald-600" />
+                Particular / Persona Física
               </button>
             </div>
+
+            <form onSubmit={guardarNuevoProveedor} className="p-6 overflow-y-auto space-y-4 text-xs">
+              {tipoNuevoProveedor === 'particular' ? (
+                <>
+                  <div>
+                    <label className="block font-bold text-[#132B20] mb-1">Cédula de Identidad (TSE) *</label>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={formProveedorParticular.identificacion}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setFormProveedorParticular({ ...formProveedorParticular, identificacion: val });
+                          const digits = val.replace(/\D/g, '');
+                          if (digits.length === 9) {
+                            consultarTseProveedor(digits);
+                          }
+                        }}
+                        onBlur={() => {
+                          const digits = formProveedorParticular.identificacion.replace(/\D/g, '');
+                          if (digits.length >= 8 && !formProveedorParticular.nombre) {
+                            consultarTseProveedor(digits);
+                          }
+                        }}
+                        placeholder="Ej. 1-0899-0432 (9 dígitos)"
+                        className="w-full px-3 py-2 bg-[#FAF7F0] border border-[#DFD5C4] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#2D5E46] font-mono font-bold text-[#132B20]"
+                        required
+                      />
+                      {consultandoPadron && (
+                        <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5 text-[#2D5E46]">
+                          <div className="w-4 h-4 border-2 border-[#2D5E46]/30 border-t-[#2D5E46] rounded-full animate-spin" />
+                          <span className="text-[10px] font-semibold">Consultando TSE...</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-3">
+                    <div>
+                      <label className="block font-bold text-[#132B20] mb-1">Nombre *</label>
+                      <input
+                        type="text"
+                        value={formProveedorParticular.nombre}
+                        onChange={(e) => setFormProveedorParticular({ ...formProveedorParticular, nombre: e.target.value })}
+                        className="w-full px-3 py-2 bg-[#FAF7F0] border border-[#DFD5C4] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#2D5E46] font-semibold"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-bold text-[#132B20] mb-1">Primer Apellido *</label>
+                      <input
+                        type="text"
+                        value={formProveedorParticular.apellido1}
+                        onChange={(e) => setFormProveedorParticular({ ...formProveedorParticular, apellido1: e.target.value })}
+                        className="w-full px-3 py-2 bg-[#FAF7F0] border border-[#DFD5C4] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#2D5E46] font-semibold"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-bold text-[#132B20] mb-1">Segundo Apellido</label>
+                      <input
+                        type="text"
+                        value={formProveedorParticular.apellido2}
+                        onChange={(e) => setFormProveedorParticular({ ...formProveedorParticular, apellido2: e.target.value })}
+                        className="w-full px-3 py-2 bg-[#FAF7F0] border border-[#DFD5C4] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#2D5E46]"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block font-bold text-[#132B20] mb-1">Correo Electrónico *</label>
+                      <input
+                        type="email"
+                        value={formProveedorParticular.correo}
+                        onChange={(e) => setFormProveedorParticular({ ...formProveedorParticular, correo: e.target.value })}
+                        placeholder="proveedor@gmail.com"
+                        className="w-full px-3 py-2 bg-[#FAF7F0] border border-[#DFD5C4] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#2D5E46]"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-bold text-[#132B20] mb-1">Teléfono</label>
+                      <input
+                        type="text"
+                        value={formProveedorParticular.telefono}
+                        onChange={(e) => setFormProveedorParticular({ ...formProveedorParticular, telefono: e.target.value })}
+                        placeholder="8888-0000"
+                        className="w-full px-3 py-2 bg-[#FAF7F0] border border-[#DFD5C4] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#2D5E46]"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block font-bold text-[#132B20] mb-1">Dirección Física</label>
+                    <input
+                      type="text"
+                      value={formProveedorParticular.direccion}
+                      onChange={(e) => setFormProveedorParticular({ ...formProveedorParticular, direccion: e.target.value })}
+                      placeholder="Liberia, Guanacaste, 100m norte del parque"
+                      className="w-full px-3 py-2 bg-[#FAF7F0] border border-[#DFD5C4] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#2D5E46]"
+                    />
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div>
+                    <label className="block font-bold text-[#132B20] mb-1">Cédula Jurídica (Tributación) *</label>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={formProveedorInstitucional.cedulaJuridica}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setFormProveedorInstitucional({ ...formProveedorInstitucional, cedulaJuridica: val });
+                          const digits = val.replace(/\D/g, '');
+                          if (digits.length === 10) {
+                            consultarHaciendaProveedor(digits);
+                          }
+                        }}
+                        onBlur={() => {
+                          const digits = formProveedorInstitucional.cedulaJuridica.replace(/\D/g, '');
+                          if (digits.length >= 9 && !formProveedorInstitucional.razonSocial) {
+                            consultarHaciendaProveedor(digits);
+                          }
+                        }}
+                        placeholder="Ej. 3-101-998877 (10 dígitos)"
+                        className="w-full px-3 py-2 bg-[#FAF7F0] border border-[#DFD5C4] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#2D5E46] font-mono font-bold text-[#132B20]"
+                        required
+                      />
+                      {consultandoPadron && (
+                        <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5 text-amber-700">
+                          <div className="w-4 h-4 border-2 border-amber-600/30 border-t-amber-600 rounded-full animate-spin" />
+                          <span className="text-[10px] font-semibold">Consultando Hacienda...</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block font-bold text-[#132B20] mb-1">Razón Social *</label>
+                    <input
+                      type="text"
+                      value={formProveedorInstitucional.razonSocial}
+                      onChange={(e) => setFormProveedorInstitucional({ ...formProveedorInstitucional, razonSocial: e.target.value })}
+                      placeholder="Ej. Distribuidora Escolar del Valle S.A."
+                      className="w-full px-3 py-2 bg-[#FAF7F0] border border-[#DFD5C4] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#2D5E46] font-bold"
+                      required
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-3">
+                    <div>
+                      <label className="block font-bold text-[#132B20] mb-1">Nombre Contacto</label>
+                      <input
+                        type="text"
+                        value={formProveedorInstitucional.nombreContacto}
+                        onChange={(e) => setFormProveedorInstitucional({ ...formProveedorInstitucional, nombreContacto: e.target.value })}
+                        placeholder="Laura Mora"
+                        className="w-full px-3 py-2 bg-[#FAF7F0] border border-[#DFD5C4] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#2D5E46]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-bold text-[#132B20] mb-1">Tel. Contacto</label>
+                      <input
+                        type="text"
+                        value={formProveedorInstitucional.telefonoContacto}
+                        onChange={(e) => setFormProveedorInstitucional({ ...formProveedorInstitucional, telefonoContacto: e.target.value })}
+                        placeholder="2222-3333"
+                        className="w-full px-3 py-2 bg-[#FAF7F0] border border-[#DFD5C4] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#2D5E46]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-bold text-[#132B20] mb-1">Correo Contacto</label>
+                      <input
+                        type="email"
+                        value={formProveedorInstitucional.correoContacto}
+                        onChange={(e) => setFormProveedorInstitucional({ ...formProveedorInstitucional, correoContacto: e.target.value })}
+                        placeholder="contacto@empresa.cr"
+                        className="w-full px-3 py-2 bg-[#FAF7F0] border border-[#DFD5C4] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#2D5E46]"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block font-bold text-[#132B20] mb-1">Correo Empresa *</label>
+                      <input
+                        type="email"
+                        value={formProveedorInstitucional.correo}
+                        onChange={(e) => setFormProveedorInstitucional({ ...formProveedorInstitucional, correo: e.target.value })}
+                        placeholder="ventas@empresa.cr"
+                        className="w-full px-3 py-2 bg-[#FAF7F0] border border-[#DFD5C4] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#2D5E46]"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-bold text-[#132B20] mb-1">Teléfono Empresa</label>
+                      <input
+                        type="text"
+                        value={formProveedorInstitucional.telefono}
+                        onChange={(e) => setFormProveedorInstitucional({ ...formProveedorInstitucional, telefono: e.target.value })}
+                        placeholder="2222-0000"
+                        className="w-full px-3 py-2 bg-[#FAF7F0] border border-[#DFD5C4] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#2D5E46]"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block font-bold text-[#132B20] mb-1">Dirección Física</label>
+                    <input
+                      type="text"
+                      value={formProveedorInstitucional.direccion}
+                      onChange={(e) => setFormProveedorInstitucional({ ...formProveedorInstitucional, direccion: e.target.value })}
+                      placeholder="Parque Industrial Zeta, Heredia"
+                      className="w-full px-3 py-2 bg-[#FAF7F0] border border-[#DFD5C4] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#2D5E46]"
+                    />
+                  </div>
+                </>
+              )}
+
+              <div className="pt-3 flex items-center justify-end gap-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setModalCrearProveedorAbierto(false)}
+                  disabled={guardando}
+                  className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-xl font-semibold transition"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={guardando}
+                  className="px-5 py-2 bg-[#132B20] hover:bg-[#1A3D2F] text-white font-bold rounded-xl shadow-md transition disabled:opacity-50"
+                >
+                  {guardando ? 'Guardando en SQL...' : 'Registrar Proveedor'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ================= MODAL EDITAR PROVEEDOR ================= */}
+      {modalEditarProveedorAbierto && proveedorAEditar && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#132B20]/60 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full max-h-[90vh] shadow-2xl border border-[#DFD5C4] overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-150">
+            <div className="bg-[#132B20] text-white p-5 flex items-center justify-between">
+              <div>
+                <h3 className="font-bold text-base flex items-center gap-2">
+                  <Edit2 className="w-5 h-5 text-amber-400" />
+                  Editar Proveedor #{proveedorAEditar.Id_Proveedor}
+                </h3>
+                <p className="text-xs text-slate-300 mt-0.5">
+                  {proveedorAEditar.Numero_Identificacion} &bull; {proveedorAEditar.Tipo_Proveedor}
+                </p>
+              </div>
+              <button
+                onClick={() => setModalEditarProveedorAbierto(false)}
+                className="p-1 text-slate-400 hover:text-white rounded-lg transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={guardarEdicionProveedor} className="p-6 overflow-y-auto space-y-4 text-xs">
+              {proveedorAEditar.Tipo_Proveedor === 'Particular' ? (
+                <>
+                  <div>
+                    <label className="block font-bold text-[#132B20] mb-1">Nombre</label>
+                    <input
+                      type="text"
+                      value={formEditarProveedor.nombre}
+                      onChange={(e) => setFormEditarProveedor({ ...formEditarProveedor, nombre: e.target.value })}
+                      className="w-full px-3 py-2 bg-[#FAF7F0] border border-[#DFD5C4] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#2D5E46] font-semibold"
+                      required
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block font-bold text-[#132B20] mb-1">Primer Apellido</label>
+                      <input
+                        type="text"
+                        value={formEditarProveedor.apellido1}
+                        onChange={(e) => setFormEditarProveedor({ ...formEditarProveedor, apellido1: e.target.value })}
+                        className="w-full px-3 py-2 bg-[#FAF7F0] border border-[#DFD5C4] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#2D5E46] font-semibold"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-bold text-[#132B20] mb-1">Segundo Apellido</label>
+                      <input
+                        type="text"
+                        value={formEditarProveedor.apellido2}
+                        onChange={(e) => setFormEditarProveedor({ ...formEditarProveedor, apellido2: e.target.value })}
+                        className="w-full px-3 py-2 bg-[#FAF7F0] border border-[#DFD5C4] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#2D5E46]"
+                      />
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div>
+                    <label className="block font-bold text-[#132B20] mb-1">Razón Social</label>
+                    <input
+                      type="text"
+                      value={formEditarProveedor.razonSocial}
+                      onChange={(e) => setFormEditarProveedor({ ...formEditarProveedor, razonSocial: e.target.value })}
+                      className="w-full px-3 py-2 bg-[#FAF7F0] border border-[#DFD5C4] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#2D5E46] font-bold"
+                      required
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-3">
+                    <div>
+                      <label className="block font-bold text-[#132B20] mb-1">Nombre Contacto</label>
+                      <input
+                        type="text"
+                        value={formEditarProveedor.nombreContacto}
+                        onChange={(e) => setFormEditarProveedor({ ...formEditarProveedor, nombreContacto: e.target.value })}
+                        className="w-full px-3 py-2 bg-[#FAF7F0] border border-[#DFD5C4] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#2D5E46]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-bold text-[#132B20] mb-1">Tel. Contacto</label>
+                      <input
+                        type="text"
+                        value={formEditarProveedor.telefonoContacto}
+                        onChange={(e) => setFormEditarProveedor({ ...formEditarProveedor, telefonoContacto: e.target.value })}
+                        className="w-full px-3 py-2 bg-[#FAF7F0] border border-[#DFD5C4] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#2D5E46]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-bold text-[#132B20] mb-1">Correo Contacto</label>
+                      <input
+                        type="email"
+                        value={formEditarProveedor.correoContacto}
+                        onChange={(e) => setFormEditarProveedor({ ...formEditarProveedor, correoContacto: e.target.value })}
+                        className="w-full px-3 py-2 bg-[#FAF7F0] border border-[#DFD5C4] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#2D5E46]"
+                      />
+                    </div>
+                  </div>
+                </>
+              )}
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-[#132B20] mb-1">Correo Electrónico General</label>
+                  <input
+                    type="email"
+                    value={formEditarProveedor.correo}
+                    onChange={(e) => setFormEditarProveedor({ ...formEditarProveedor, correo: e.target.value })}
+                    className="w-full px-3 py-2 bg-[#FAF7F0] border border-[#DFD5C4] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#2D5E46]"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-[#132B20] mb-1">Teléfono Principal</label>
+                  <input
+                    type="text"
+                    value={formEditarProveedor.telefono}
+                    onChange={(e) => setFormEditarProveedor({ ...formEditarProveedor, telefono: e.target.value })}
+                    className="w-full px-3 py-2 bg-[#FAF7F0] border border-[#DFD5C4] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#2D5E46]"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-[#132B20] mb-1">Dirección Física</label>
+                <input
+                  type="text"
+                  value={formEditarProveedor.direccion}
+                  onChange={(e) => setFormEditarProveedor({ ...formEditarProveedor, direccion: e.target.value })}
+                  className="w-full px-3 py-2 bg-[#FAF7F0] border border-[#DFD5C4] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#2D5E46]"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-[#132B20] mb-1">Estado Operativo</label>
+                <select
+                  value={formEditarProveedor.estado ? '1' : '0'}
+                  onChange={(e) => setFormEditarProveedor({ ...formEditarProveedor, estado: e.target.value === '1' })}
+                  className="w-full px-3 py-2 bg-[#FAF7F0] border border-[#DFD5C4] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#2D5E46] font-semibold"
+                >
+                  <option value="1">Activo (Habilitado para Compras)</option>
+                  <option value="0">Inactivo (Suspendido)</option>
+                </select>
+              </div>
+
+              <div className="pt-3 flex items-center justify-end gap-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setModalEditarProveedorAbierto(false)}
+                  disabled={guardando}
+                  className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-xl font-semibold transition"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={guardando}
+                  className="px-5 py-2 bg-[#132B20] hover:bg-[#1A3D2F] text-white font-bold rounded-xl shadow-md transition disabled:opacity-50"
+                >
+                  {guardando ? 'Guardando...' : 'Guardar Cambios'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

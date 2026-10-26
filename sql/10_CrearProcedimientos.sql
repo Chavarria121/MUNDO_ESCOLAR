@@ -214,7 +214,16 @@ BEGIN
             WHEN tc.Nombre = 'Institucional' THEN ci.Razon_Social
             ELSE 'No especificado'
         END AS Nombre_Cliente,
+        cp.Nombre,
+        cp.Apellido1,
+        cp.Apellido2,
+        ci.Razon_Social,
+        ci.Cedula_Juridica,
         ci.Nombre_Contacto,
+        ci.Telefono_Contacto,
+        ci.Correo_Contacto,
+        COALESCE(ci.Correo_Contacto, u.Correo) AS Correo,
+        u.Correo AS Correo_Usuario,
         c.Telefono,
         c.Direccion,
         c.Estado
@@ -222,6 +231,7 @@ BEGIN
     INNER JOIN Tipo_Cliente tc ON c.Id_Tipo_Cliente = tc.Id_Tipo_Cliente
     LEFT JOIN Cliente_Particular cp ON c.Id_Cliente = cp.Id_Cliente
     LEFT JOIN Cliente_Institucional ci ON c.Id_Cliente = ci.Id_Cliente
+    LEFT JOIN Usuario u ON c.Id_Usuario = u.Id_Usuario
     WHERE (@Id_Cliente IS NULL OR c.Id_Cliente = @Id_Cliente)
       AND (@TerminoBusqueda IS NULL OR 
            cp.Identificacion LIKE '%' + @TerminoBusqueda + '%' OR
@@ -496,7 +506,14 @@ BEGIN
             WHEN tp.Nombre = 'Institucional' THEN pi.Razon_Social
             ELSE 'No especificado'
         END AS Nombre_Proveedor,
+        pp.Nombre,
+        pp.Apellido1,
+        pp.Apellido2,
+        pi.Razon_Social,
+        pi.Cedula_Juridica,
         pi.Nombre_Contacto,
+        pi.Telefono_Contacto,
+        pi.Correo_Contacto,
         p.Correo,
         p.Telefono,
         p.Direccion,
@@ -1958,11 +1975,12 @@ BEGIN
         IF @MontoTotal IS NULL
             THROW 50220, 'La venta especificada no existe.', 1;
 
-        DECLARE @IdEstadoEmitida INT = (SELECT Id_Estado_Factura FROM Estado_Factura WHERE Nombre_Estado = 'Emitida');
+        DECLARE @IdEstadoPendiente INT = (SELECT Id_Estado_Factura FROM Estado_Factura WHERE Nombre_Estado = 'Pendiente');
+        IF @IdEstadoPendiente IS NULL SET @IdEstadoPendiente = 1;
         DECLARE @FechaVenc DATETIME = DATEADD(DAY, ISNULL(@DiasCredito, 0), GETDATE());
 
         INSERT INTO Factura (Id_Venta, Id_Estado_Factura, Fecha_Emision, Fecha_Vencimiento, Monto_Total, Saldo_Pendiente)
-        VALUES (@Id_Venta, @IdEstadoEmitida, GETDATE(), @FechaVenc, @MontoTotal, @MontoTotal);
+        VALUES (@Id_Venta, @IdEstadoPendiente, GETDATE(), @FechaVenc, @MontoTotal, @MontoTotal);
 
         SET @Id_Factura_Nueva = SCOPE_IDENTITY();
         SELECT @Id_Factura_Nueva AS Id_Factura, 'Factura emitida correctamente.' AS Mensaje;
@@ -2025,6 +2043,10 @@ BEGIN
     SET NOCOUNT ON;
     BEGIN TRY
         BEGIN TRANSACTION;
+
+        IF @Motivo IS NULL OR LTRIM(RTRIM(@Motivo)) = ''
+            THROW 50228, 'El motivo de anulación de la factura es obligatorio.', 1;
+
         DECLARE @EstadoActual VARCHAR(20);
         SELECT @EstadoActual = ef.Nombre_Estado
         FROM Factura f
@@ -2036,8 +2058,9 @@ BEGIN
         IF @EstadoActual = 'Anulada'
             THROW 50226, 'La factura ya se encuentra anulada.', 1;
 
-        -- Anular pagos registrados
-        UPDATE Pago SET Estado = 0 WHERE Id_Factura = @Id_Factura AND Estado = 1;
+        -- REGLA OFICIAL DE LA TESIS (Pág. 381): Si posee pagos activos, se rechaza
+        IF EXISTS (SELECT 1 FROM Pago WHERE Id_Factura = @Id_Factura AND Estado = 1)
+            THROW 50227, 'No se puede anular la factura porque registra pagos activos. Debe anular primero los pagos individualmente mediante SP_Pago_Anular.', 1;
 
         DECLARE @IdEstadoAnulada INT = (SELECT Id_Estado_Factura FROM Estado_Factura WHERE Nombre_Estado = 'Anulada');
         UPDATE Factura 
@@ -2045,8 +2068,12 @@ BEGIN
             Saldo_Pendiente = 0.00
         WHERE Id_Factura = @Id_Factura;
 
+        -- Auditoría de anulación de factura con motivo y usuario
+        INSERT INTO dbo.Bitacora (Id_Usuario, Accion, Tabla_Afectada, Id_Registro_Afectado, Fecha_Hora, Descripcion)
+        VALUES (@Id_Usuario, 'ANULACION', 'Factura', @Id_Factura, GETDATE(), CONCAT('Anulación de Factura #', @Id_Factura, '. Motivo: ', @Motivo));
+
         COMMIT TRANSACTION;
-        SELECT @Id_Factura AS Id_Factura, 'Factura y pagos asociados anulados correctamente.' AS Mensaje;
+        SELECT @Id_Factura AS Id_Factura, 'Factura anulada correctamente conforme a la normativa.' AS Mensaje;
     END TRY
     BEGIN CATCH
         IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
@@ -2130,6 +2157,10 @@ BEGIN
     SET NOCOUNT ON;
     BEGIN TRY
         BEGIN TRANSACTION;
+
+        IF @Motivo IS NULL OR LTRIM(RTRIM(@Motivo)) = ''
+            THROW 50242, 'El motivo de anulación del pago es obligatorio.', 1;
+
         DECLARE @IdFactura INT, @MontoReversar DECIMAL(12, 2), @EstadoPago BIT;
         SELECT @IdFactura = Id_Factura, @MontoReversar = Monto_Pagado, @EstadoPago = Estado
         FROM Pago WHERE Id_Pago = @Id_Pago;
@@ -2148,7 +2179,7 @@ BEGIN
 
         DECLARE @IdEstadoFact INT;
         IF @NuevoSaldo >= @MontoTotal
-            SET @IdEstadoFact = (SELECT Id_Estado_Factura FROM Estado_Factura WHERE Nombre_Estado = 'Emitida');
+            SET @IdEstadoFact = (SELECT Id_Estado_Factura FROM Estado_Factura WHERE Nombre_Estado = 'Pendiente');
         ELSE
             SET @IdEstadoFact = (SELECT Id_Estado_Factura FROM Estado_Factura WHERE Nombre_Estado = 'Parcial');
 
@@ -2156,6 +2187,10 @@ BEGIN
         SET Saldo_Pendiente = @NuevoSaldo,
             Id_Estado_Factura = @IdEstadoFact
         WHERE Id_Factura = @IdFactura;
+
+        -- Registrar en Bitacora con motivo explícito y responsable
+        INSERT INTO dbo.Bitacora (Id_Usuario, Accion, Tabla_Afectada, Id_Registro_Afectado, Fecha_Hora, Descripcion)
+        VALUES (@Id_Usuario, 'ANULACION', 'Pago', @Id_Pago, GETDATE(), CONCAT('Anulación de pago ID ', @Id_Pago, ' (Factura #', @IdFactura, ', Monto: ', @MontoReversar, '). Motivo: ', @Motivo));
 
         COMMIT TRANSACTION;
         SELECT @Id_Pago AS Id_Pago, @NuevoSaldo AS NuevoSaldoFactura, 'Pago anulado y saldo restituido.' AS Mensaje;

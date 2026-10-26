@@ -109,7 +109,7 @@ export default function ReportesPage() {
           </div>
         </div>
 
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-2.5 no-print">
           <button
             onClick={() => window.print()}
             className="flex items-center gap-1.5 px-4 py-2.5 text-xs font-bold text-[#132B20] bg-white border border-[#DFD5C4] hover:bg-[#F3ECE0] rounded-xl transition shadow-xs"
@@ -130,7 +130,7 @@ export default function ReportesPage() {
       </div>
 
       {/* Selector de Reportes (Píldoras en Verde Bosque, Terracota y Marfil) */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3 no-print">
         {[
           { id: 'PRODUCTOS_MAS_VENDIDOS', label: 'Top Productos', icon: Award, desc: 'Ranking de unidades' },
           { id: 'VENTAS_PERIODO', label: 'Ventas por Período', icon: TrendingUp, desc: 'Consolidado con IVA' },
@@ -165,7 +165,7 @@ export default function ReportesPage() {
 
       {/* Barra de Filtros Temporales */}
       {['PRODUCTOS_MAS_VENDIDOS', 'VENTAS_PERIODO', 'MOVIMIENTOS_KARDEX'].includes(reporteActivo) && (
-        <div className="bg-white rounded-2xl border border-[#DFD5C4] p-4 shadow-subtle flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+        <div className="bg-white rounded-2xl border border-[#DFD5C4] p-4 shadow-subtle flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs no-print">
           <div className="flex items-center gap-2">
             <div className="w-7 h-7 rounded-lg bg-[#F3ECE0] border border-[#DFD5C4] flex items-center justify-center">
               <Calendar className="w-4 h-4 text-[#C05A3E]" />
@@ -205,8 +205,33 @@ export default function ReportesPage() {
         </div>
       )}
 
+      {/* Encabezado Oficial Exclusivo para Impresión */}
+      <div className="hidden print:block mb-4 pb-2 border-b-2 border-[#132B20]">
+        <div className="flex justify-between items-end">
+          <div>
+            <h1 className="text-xl font-black text-[#132B20]">LIBRERÍA Y PAPELERÍA MUNDO ESCOLAR</h1>
+            <p className="text-xs text-[#5C3622]">
+              Reporte Oficial: {
+                reporteActivo === 'PRODUCTOS_MAS_VENDIDOS' ? 'Top Productos Más Vendidos' :
+                reporteActivo === 'VENTAS_PERIODO' ? 'Ventas por Período Consolidado' :
+                reporteActivo === 'FACTURAS_PENDIENTES' ? 'Facturas con Saldo Pendiente de Cobro' :
+                reporteActivo === 'CUENTAS_VENCIDAS' ? 'Cuentas por Cobrar Vencidas y Morosidad' :
+                'Auditoría y Movimientos de Kárdex'
+              } • Liberia, Guanacaste
+            </p>
+          </div>
+          <div className="text-right text-xs text-[#5C3622]">
+            <p><span className="font-bold">Fecha de Emisión:</span> {new Date().toLocaleString('es-CR')}</p>
+            {['PRODUCTOS_MAS_VENDIDOS', 'VENTAS_PERIODO', 'MOVIMIENTOS_KARDEX'].includes(reporteActivo) && (
+              <p><span className="font-bold">Período:</span> {fechaInicio} al {fechaFin}</p>
+            )}
+            <p><span className="font-bold">Registros:</span> {datosReporte.length}</p>
+          </div>
+        </div>
+      </div>
+
       {/* Contenedor de la Tabla de Reporte */}
-      <div className="bg-white rounded-3xl border border-[#DFD5C4] overflow-hidden shadow-subtle">
+      <div className="bg-white rounded-3xl border border-[#DFD5C4] overflow-hidden shadow-subtle print:border-none print:shadow-none print:rounded-none">
         {loading ? (
           <div className="p-12 text-center text-[#5C3622] space-y-3">
             <div className="w-8 h-8 border-3 border-[#DFD5C4] border-t-[#C05A3E] rounded-full animate-spin mx-auto" />
@@ -219,7 +244,7 @@ export default function ReportesPage() {
           </div>
         ) : (
           <div>
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto print:overflow-visible">
               {/* REPORTE 1: TOP PRODUCTOS */}
               {reporteActivo === 'PRODUCTOS_MAS_VENDIDOS' && (
                 <table className="w-full text-left text-xs">
@@ -234,7 +259,7 @@ export default function ReportesPage() {
                   </thead>
                   <tbody className="divide-y divide-[#DFD5C4]/50 font-medium text-[#132B20]">
                     {datosReporte.map((p, idx) => (
-                      <tr key={idx} className="hover:bg-[#FAF7F0] transition">
+                      <tr key={idx} className="hover:bg-[#FAF7F0] transition print:break-inside-avoid">
                         <td className="py-3.5 px-4 font-mono font-bold text-[#C05A3E]">#{p.Id_Producto}</td>
                         <td className="py-3.5 px-4 font-bold text-[#132B20]">{p.Nombre_Producto}</td>
                         <td className="py-3.5 px-4 text-center font-bold text-[#2D5E46]">{p.Unidades_Vendidas}</td>
@@ -265,7 +290,7 @@ export default function ReportesPage() {
                   </thead>
                   <tbody className="divide-y divide-[#DFD5C4]/50 font-medium text-[#132B20]">
                     {datosReporte.map((v, idx) => (
-                      <tr key={idx} className="hover:bg-[#FAF7F0] transition">
+                      <tr key={idx} className="hover:bg-[#FAF7F0] transition print:break-inside-avoid">
                         <td className="py-3.5 px-4 font-mono font-bold text-[#C05A3E]">#{v.Id_Venta}</td>
                         <td className="py-3.5 px-4 text-[#5C3622]">
                           {new Date(v.Fecha).toLocaleDateString('es-CR')}
@@ -303,7 +328,7 @@ export default function ReportesPage() {
                   </thead>
                   <tbody className="divide-y divide-[#DFD5C4]/50 font-medium text-[#132B20]">
                     {datosReporte.map((f, idx) => (
-                      <tr key={idx} className="hover:bg-[#FAF7F0] transition">
+                      <tr key={idx} className="hover:bg-[#FAF7F0] transition print:break-inside-avoid">
                         <td className="py-3.5 px-4 font-mono font-bold text-[#C05A3E]">FAC-#{f.Id_Factura}</td>
                         <td className="py-3.5 px-4 font-bold text-[#132B20]">{f.Nombre_Cliente}</td>
                         <td className="py-3.5 px-4 text-[#5C3622]">{new Date(f.Fecha_Emision).toLocaleDateString('es-CR')}</td>
@@ -331,7 +356,7 @@ export default function ReportesPage() {
                   </thead>
                   <tbody className="divide-y divide-[#DFD5C4]/50 font-medium text-[#132B20]">
                     {datosReporte.map((c, idx) => (
-                      <tr key={idx} className="hover:bg-[#FAF7F0] transition">
+                      <tr key={idx} className="hover:bg-[#FAF7F0] transition print:break-inside-avoid">
                         <td className="py-3.5 px-4 font-mono font-bold text-[#C05A3E]">FAC-#{c.Id_Factura}</td>
                         <td className="py-3.5 px-4 font-bold text-[#132B20]">{c.Nombre_Cliente}</td>
                         <td className="py-3.5 px-4 font-black text-[#C05A3E]">{c.Dias_Mora} días</td>
@@ -359,7 +384,7 @@ export default function ReportesPage() {
                   </thead>
                   <tbody className="divide-y divide-[#DFD5C4]/50 font-medium text-[#132B20]">
                     {datosReporte.map((m, idx) => (
-                      <tr key={idx} className="hover:bg-[#FAF7F0] transition">
+                      <tr key={idx} className="hover:bg-[#FAF7F0] transition print:break-inside-avoid">
                         <td className="py-3.5 px-4 font-mono font-bold text-[#5C3622]">#{m.Id_Movimiento_Inventario}</td>
                         <td className="py-3.5 px-4 text-[#5C3622]">{new Date(m.Fecha).toLocaleDateString('es-CR')}</td>
                         <td className="py-3.5 px-4 font-bold text-[#132B20]">{m.Producto}</td>

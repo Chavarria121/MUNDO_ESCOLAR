@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import {
   ShoppingCart,
   Search,
@@ -52,6 +53,27 @@ export default function PosPage({ onNavigateToFacturacion }) {
   // Estado del Carrito / Orden de Venta
   const [clienteSeleccionado, setClienteSeleccionado] = useState(null);
   const [condicionSeleccionada, setCondicionSeleccionada] = useState(1); // 1 = Contado
+  const [condicionesAutorizadasCliente, setCondicionesAutorizadasCliente] = useState([]);
+
+  // Consultar en tiempo real las condiciones autorizadas para el cliente seleccionado (SP_ClienteCondicionPago_Consultar)
+  useEffect(() => {
+    if (!clienteSeleccionado?.Id_Cliente) {
+      setCondicionesAutorizadasCliente([]);
+      setCondicionSeleccionada(1);
+      return;
+    }
+    api.get(`/clientes/${clienteSeleccionado.Id_Cliente}/condiciones-pago`)
+      .then((res) => {
+        const activas = (res.data || []).filter((c) => c.Estado);
+        setCondicionesAutorizadasCliente(activas);
+        if (!activas.some((c) => c.Id_Condicion_Pago === condicionSeleccionada)) {
+          setCondicionSeleccionada(1);
+        }
+      })
+      .catch((err) => {
+        console.error('Error cargando condiciones del cliente en POS:', err);
+      });
+  }, [clienteSeleccionado]);
   const [itemsCarrito, setItemsCarrito] = useState([]);
 
   // Modales
@@ -59,6 +81,13 @@ export default function PosPage({ onNavigateToFacturacion }) {
   const [modalReciboAbierto, setModalReciboAbierto] = useState(false);
   const [procesandoVenta, setProcesandoVenta] = useState(false);
   const [resultadoVenta, setResultadoVenta] = useState(null);
+
+  useEffect(() => {
+    if (modalReciboAbierto) {
+      document.body.classList.add('imprimiendo-modal');
+      return () => document.body.classList.remove('imprimiendo-modal');
+    }
+  }, [modalReciboAbierto]);
 
   // Formulario de Cobro
   const [metodoPagoId, setMetodoPagoId] = useState(1); // 1 = Efectivo
@@ -218,6 +247,18 @@ export default function PosPage({ onNavigateToFacturacion }) {
     }
   };
 
+  const iniciarNuevaVenta = () => {
+    setItemsCarrito([]);
+    setClienteSeleccionado(null);
+    setCondicionSeleccionada(1);
+    setMetodoPagoId(1);
+    setMontoEntregado('');
+    setReferenciaPago('');
+    setModoCambiarCliente(false);
+    setModalReciboAbierto(false);
+    showToast('Caja lista para una nueva venta', 'info');
+  };
+
   // Cargar catálogos al iniciar
   useEffect(() => {
     cargarCatalogos();
@@ -240,9 +281,9 @@ export default function PosPage({ onNavigateToFacturacion }) {
       setCondicionesPago(resCondiciones.data || []);
       setMetodosPago(resMetodos.data || []);
 
-      if (resClientes.data && resClientes.data.length > 0) {
-        setClienteSeleccionado(resClientes.data[0]);
-      }
+      // No preseleccionar cliente: la venta inicia sin cliente para ser asignada explícitamente
+      setClienteSeleccionado(null);
+      setCondicionSeleccionada(1);
     } catch (err) {
       console.error('Error cargando catálogos POS:', err);
       showToast('Error de conexión con el servidor', 'error');
@@ -379,6 +420,12 @@ export default function PosPage({ onNavigateToFacturacion }) {
     return Math.max(0, total - entregado);
   }, [montoEntregado, total]);
 
+  // Determinar si la venta es a Crédito o de Contado
+  const esVentaCredito = useMemo(() => {
+    const cond = condicionesPago.find((c) => c.Id_Condicion_Pago === condicionSeleccionada);
+    return cond ? cond.Dias_Credito > 0 : condicionSeleccionada !== 1;
+  }, [condicionesPago, condicionSeleccionada]);
+
   // Abrir modal de cobro
   const iniciarCobro = () => {
     if (itemsCarrito.length === 0) {
@@ -386,7 +433,8 @@ export default function PosPage({ onNavigateToFacturacion }) {
       return;
     }
     if (!clienteSeleccionado) {
-      showToast('Seleccione un cliente para la orden fiscal', 'warning');
+      showToast('Debe asignar un cliente a la venta antes de facturar.', 'warning');
+      setModoCambiarCliente(true);
       return;
     }
     setMontoEntregado(total.toString());
@@ -396,7 +444,7 @@ export default function PosPage({ onNavigateToFacturacion }) {
 
   // Confirmar y Ejecutar Venta completa contra SQL Server
   const procesarVentaFinal = async () => {
-    if (metodoPagoId === 1 && (parseFloat(montoEntregado) || 0) < total) {
+    if (!esVentaCredito && metodoPagoId === 1 && (parseFloat(montoEntregado) || 0) < total) {
       showToast('El monto entregado en efectivo es menor al total a pagar', 'warning');
       return;
     }
@@ -461,8 +509,10 @@ export default function PosPage({ onNavigateToFacturacion }) {
         identificacion: clienteSeleccionado.Numero_Identificacion,
         vendedor: user?.nombreUsuario || 'Cajero',
         fecha: new Date(),
-        condicionPago: condicionesPago.find((c) => c.Id_Condicion_Pago === condicionSeleccionada)?.Nombre || 'Contado',
-        metodoPago: metodosPago.find((m) => m.Id_Metodo_Pago === metodoPagoId)?.Nombre || 'Efectivo',
+        condicionPago: condicionesPago.find((c) => c.Id_Condicion_Pago === condicionSeleccionada)?.Nombre || (esVentaCredito ? 'Crédito' : 'Contado'),
+        metodoPago: esVentaCredito
+          ? `Crédito (${condicionesPago.find((c) => c.Id_Condicion_Pago === condicionSeleccionada)?.Nombre || 'Crédito'})`
+          : (metodosPago.find((m) => m.Id_Metodo_Pago === metodoPagoId)?.Nombre || 'Efectivo'),
         items: [...itemsCarrito],
         subtotal,
         iva,
@@ -489,9 +539,9 @@ export default function PosPage({ onNavigateToFacturacion }) {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-3">
       {/* Header POS */}
-      <div className="bg-white rounded-2xl border border-[#DFD5C4] p-5 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="bg-white rounded-2xl border border-[#DFD5C4] px-4 py-2.5 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3 shrink-0">
         <div>
           <div className="flex items-center gap-2.5">
             <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-[#2D5E46] to-[#25221E] flex items-center justify-center text-white shadow-glow-blue">
@@ -534,11 +584,11 @@ export default function PosPage({ onNavigateToFacturacion }) {
       </div>
 
       {/* Grid Principal POS: 7 cols Catálogo / 5 cols Carrito */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start h-[calc(100vh-10.5rem)] min-h-[560px]">
         {/* PANEL IZQUIERDO: Catálogo de Productos y Servicios */}
-        <div className="lg:col-span-7 space-y-4">
+        <div className="lg:col-span-7 flex flex-col h-full space-y-3 min-h-0">
           {/* Barra de Búsqueda y Filtro de Tipo */}
-          <div className="bg-white rounded-2xl border border-[#DFD5C4] p-4 shadow-sm space-y-3">
+          <div className="bg-white rounded-2xl border border-[#DFD5C4] p-3 shadow-sm space-y-2.5 shrink-0">
             <div className="flex items-center gap-3">
               <div className="relative flex-1">
                 <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
@@ -621,7 +671,7 @@ export default function PosPage({ onNavigateToFacturacion }) {
               </p>
             </div>
           ) : (
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-3.5 max-h-[640px] overflow-y-auto pr-1">
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3 flex-1 overflow-y-auto pr-1 min-h-0 custom-scrollbar">
               {itemsFiltrados.map((item) => {
                 const esAgotado = item.tipo === 'Producto' && item.stock <= 0;
                 const stockBajo = item.tipo === 'Producto' && item.stock <= item.reorden && item.stock > 0;
@@ -703,10 +753,10 @@ export default function PosPage({ onNavigateToFacturacion }) {
         </div>
 
         {/* PANEL DERECHO: Carrito de Caja y Cobro */}
-        <div className="lg:col-span-5 space-y-4">
-          <div className="bg-white rounded-2xl border border-[#DFD5C4] shadow-sm overflow-hidden flex flex-col h-[760px]">
+        <div className="lg:col-span-5 flex flex-col h-full min-h-0">
+          <div className="bg-white rounded-2xl border border-[#DFD5C4] shadow-sm overflow-hidden flex flex-col h-full min-h-0">
             {/* Header del Ticket */}
-            <div className="p-4 border-b border-[#DFD5C4] bg-[#132B20] text-white">
+            <div className="p-3.5 border-b border-[#DFD5C4] bg-[#132B20] text-white shrink-0">
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
                   <Receipt className="w-4 h-4 text-[#DFD5C4]" />
@@ -737,7 +787,7 @@ export default function PosPage({ onNavigateToFacturacion }) {
                   )}
                 </div>
 
-                {/* Vista 1: Cliente Seleccionado Actualmente */}
+                {/* Vista de Cliente: Asignado vs Sin Asignar */}
                 {clienteSeleccionado && !modoCambiarCliente ? (
                   <div className="p-2.5 rounded-xl bg-[#1A3D2F]/90 border border-[#2D5E46]/80 flex items-center justify-between gap-2 shadow-sm">
                     <div className="min-w-0">
@@ -760,18 +810,54 @@ export default function PosPage({ onNavigateToFacturacion }) {
                       </span>
                     </div>
 
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => setModoCambiarCliente(true)}
+                        className="text-[10px] font-bold text-[#DFD5C4] hover:text-white px-2 py-1 rounded-lg bg-white/10 transition"
+                        title="Cambiar cliente asignado"
+                      >
+                        Cambiar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setClienteSeleccionado(null)}
+                        className="p-1 text-slate-400 hover:text-rose-300 rounded-lg transition"
+                        title="Quitar cliente de la venta"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                ) : !modoCambiarCliente ? (
+                  <div className="p-2.5 rounded-xl bg-amber-950/40 border border-dashed border-amber-500/40 flex items-center justify-between gap-2 shadow-sm">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className="w-7 h-7 rounded-lg bg-amber-500/20 text-amber-300 flex items-center justify-center shrink-0">
+                        <User className="w-3.5 h-3.5" />
+                      </div>
+                      <div className="min-w-0">
+                        <span className="font-bold text-amber-200 text-xs block truncate">
+                          Sin cliente asignado
+                        </span>
+                        <span className="text-[10px] text-slate-400 block truncate">
+                          Asigne un cliente para facturar
+                        </span>
+                      </div>
+                    </div>
+
                     <button
                       type="button"
                       onClick={() => setModoCambiarCliente(true)}
-                      className="p-1 text-slate-400 hover:text-white rounded-lg transition shrink-0"
-                      title="Seleccionar o registrar otro cliente"
+                      className="px-2.5 py-1.5 bg-[#C05A3E] hover:bg-[#A84930] text-white text-[11px] font-bold rounded-lg shadow-sm transition flex items-center gap-1 shrink-0"
                     >
-                      <ChevronDown className="w-4 h-4" />
+                      <Plus className="w-3 h-3" />
+                      <span>Asignar Venta</span>
                     </button>
                   </div>
                 ) : (
                   /* Vista 2: Buscador y Selector con Autocompletado Inmediato */
                   <div className="space-y-2 bg-[#0F2219] p-2.5 rounded-xl border border-[#2D5E46]/30 bg-[#1A3D2F]/95">
+                    
                     <div className="relative">
                       <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                       <input
@@ -890,21 +976,20 @@ export default function PosPage({ onNavigateToFacturacion }) {
                       </div>
                     )}
 
-                    {clienteSeleccionado && (
-                      <div className="pt-1 border-t border-[#2D5E46]/60 flex justify-end">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setModoCambiarCliente(false);
-                            setBusquedaClientePos('');
-                            setSugerenciaTsePos(null);
-                          }}
-                          className="text-[10px] text-slate-400 hover:text-slate-200 transition"
-                        >
-                          Volver sin cambiar
-                        </button>
-                      </div>
-                    )}
+                    <div className="pt-1 border-t border-[#2D5E46]/60 flex justify-end">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setModoCambiarCliente(false);
+                          setBusquedaClientePos('');
+                          setSugerenciaTsePos(null);
+                        }}
+                        className="text-[10px] text-slate-400 hover:text-slate-200 transition flex items-center gap-1"
+                      >
+                        <X className="w-3 h-3" />
+                        <span>Cancelar asignación</span>
+                      </button>
+                    </div>
                   </div>
                 )}
 
@@ -916,11 +1001,19 @@ export default function PosPage({ onNavigateToFacturacion }) {
                     onChange={(e) => setCondicionSeleccionada(parseInt(e.target.value))}
                     className="bg-[#1A3D2F] text-white border border-[#2D5E46] text-xs rounded-lg px-2.5 py-1 focus:outline-none focus:ring-1 focus:ring-[#2D5E46]"
                   >
-                    {condicionesPago.map((cond) => (
-                      <option key={cond.Id_Condicion_Pago} value={cond.Id_Condicion_Pago}>
-                        {cond.Nombre} ({cond.Dias_Credito === 0 ? 'Inmediato' : `${cond.Dias_Credito} días`})
-                      </option>
-                    ))}
+                    {(condicionesAutorizadasCliente.length > 0
+                      ? condicionesAutorizadasCliente
+                      : condicionesPago
+                    ).map((cond) => {
+                      const id = cond.Id_Condicion_Pago;
+                      const nombre = cond.Condicion_Pago || cond.Nombre;
+                      const dias = cond.Dias_Credito ?? 0;
+                      return (
+                        <option key={id} value={id}>
+                          {nombre} ({dias === 0 ? 'Contado' : `${dias} días crédito`})
+                        </option>
+                      );
+                    })}
                   </select>
                 </div>
               </div>
@@ -1001,7 +1094,7 @@ export default function PosPage({ onNavigateToFacturacion }) {
             </div>
 
             {/* Resumen Financiero y Acciones */}
-            <div className="p-4 border-t border-[#DFD5C4] bg-slate-50/70 space-y-3">
+            <div className="p-3.5 border-t border-[#DFD5C4] bg-slate-50/80 space-y-2.5 shrink-0">
               <div className="space-y-1.5 text-xs">
                 <div className="flex justify-between text-slate-600">
                   <span>Subtotal:</span>
@@ -1049,18 +1142,25 @@ export default function PosPage({ onNavigateToFacturacion }) {
       </div>
 
       {/* MODAL DE COBRO Y PAGO MULTIMÉTODO */}
-      {modalCobroAbierto && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#132B20]/60 backdrop-blur-sm p-4">
+      {modalCobroAbierto && createPortal(
+        <div 
+          className="modal-impresion-activa ticket-pos-wrapper fixed inset-0 w-screen h-screen z-[99999] flex items-center justify-center bg-[#132B20]/75 backdrop-blur-md p-4 overflow-y-auto"
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !procesandoVenta) {
+              setModalCobroAbierto(false);
+            }
+          }}
+        >
           <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl border border-[#DFD5C4] overflow-hidden animate-in fade-in zoom-in-95 duration-150">
             {/* Modal Header */}
             <div className="bg-[#132B20] text-white p-5 flex items-center justify-between">
               <div>
                 <h3 className="font-bold text-base flex items-center gap-2">
                   <Receipt className="w-5 h-5 text-emerald-400" />
-                  Emisión Fiscal & Cobro Multimétodo
+                  {esVentaCredito ? 'Emisión de Venta a Crédito Fiscal' : 'Emisión Fiscal & Cobro Multimétodo'}
                 </h3>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  Venta para: {clienteSeleccionado?.Nombre_O_RazonSocial}
+                  Venta para: {clienteSeleccionado?.Nombre_O_RazonSocial} • Condición: {condicionesPago.find((c) => c.Id_Condicion_Pago === condicionSeleccionada)?.Nombre || 'Contado'}
                 </p>
               </div>
               <button
@@ -1086,100 +1186,134 @@ export default function PosPage({ onNavigateToFacturacion }) {
                 </span>
               </div>
 
-              {/* Selector de Método de Pago */}
-              <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
-                  Método de Pago
-                </label>
-                <div className="grid grid-cols-3 gap-2">
-                  {metodosPago.map((metodo) => {
-                    const seleccionado = metodoPagoId === metodo.Id_Metodo_Pago;
-                    return (
-                      <button
-                        key={metodo.Id_Metodo_Pago}
-                        type="button"
-                        onClick={() => setMetodoPagoId(metodo.Id_Metodo_Pago)}
-                        className={`p-3 rounded-xl border text-left transition flex flex-col justify-between ${
-                          seleccionado
-                            ? 'border-[#C05A3E] bg-[#F3ECE0] text-[#132B20] font-bold shadow-sm'
-                            : 'border-[#DFD5C4] bg-white text-slate-700 hover:bg-slate-50'
-                        }`}
-                      >
-                        <span className="text-xs leading-tight">{metodo.Nombre}</span>
-                        {seleccionado && <CheckCircle2 className="w-3.5 h-3.5 text-[#2D5E46] mt-2" />}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Formularios según el método */}
-              {metodoPagoId === 1 && (
-                /* Efectivo */
-                <div className="bg-slate-50 border border-[#DFD5C4] rounded-xl p-4 space-y-3">
-                  <label className="block text-xs font-bold text-slate-700">Monto Entregado por Cliente (CRC)</label>
-                  <div className="relative">
-                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 font-bold text-slate-400">₡</span>
-                    <input
-                      type="number"
-                      value={montoEntregado}
-                      onChange={(e) => setMontoEntregado(e.target.value)}
-                      className="w-full pl-8 pr-3 py-2 text-lg font-bold text-[#132B20] bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#2D5E46]/20 focus:border-[#2D5E46]"
-                      placeholder="0"
-                    />
+              {/* Si es venta a crédito, no se cobra dinero hoy en caja */}
+              {esVentaCredito ? (
+                <div className="bg-amber-50 border border-amber-300 rounded-2xl p-5 space-y-3.5">
+                  <div className="flex items-center gap-2 text-amber-900 font-bold text-sm">
+                    <Clock className="w-5 h-5 text-amber-600" />
+                    <span>Venta a Crédito Fiscal ({condicionesPago.find((c) => c.Id_Condicion_Pago === condicionSeleccionada)?.Nombre || 'Crédito'})</span>
                   </div>
-
-                  {/* Chips de monto rápido */}
-                  <div className="flex flex-wrap gap-1.5 pt-1">
-                    {[total, 1000, 2000, 5000, 10000, 20000].map((monto) => (
-                      <button
-                        key={monto}
-                        type="button"
-                        onClick={() => setMontoEntregado(monto.toString())}
-                        className="px-2.5 py-1 text-xs font-semibold bg-white border border-[#DFD5C4] rounded-lg hover:bg-slate-100 text-slate-700 transition"
-                      >
-                        {monto === total ? 'Monto Exacto' : `₡${monto.toLocaleString('es-CR')}`}
-                      </button>
-                    ))}
+                  <p className="text-xs text-amber-800 leading-relaxed">
+                    Esta venta se procesará bajo la condición de crédito seleccionada. Conforme a las normas contables, no requiere recepción de dinero en este momento (pago inicial de ₡0,00).
+                  </p>
+                  <div className="bg-white/80 border border-amber-200 rounded-xl p-3 space-y-2 text-xs">
+                    <div className="flex justify-between items-center">
+                      <span className="font-semibold text-slate-600">Total Facturado a Crédito:</span>
+                      <span className="font-black text-[#132B20] text-sm">₡{total.toLocaleString('es-CR')}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="font-semibold text-slate-600">Monto Cobrado Hoy en Caja:</span>
+                      <span className="font-bold text-emerald-700">₡0,00 (Venta a Crédito)</span>
+                    </div>
+                    <div className="flex justify-between items-center pt-1 border-t border-amber-200">
+                      <span className="font-semibold text-slate-600">Estado Fiscal de Factura:</span>
+                      <span className="font-bold text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full border border-amber-200">
+                        Pendiente (Saldo 100%)
+                      </span>
+                    </div>
                   </div>
-
-                  {/* Cálculo de Cambio / Vuelto */}
-                  <div className="pt-2 border-t border-[#DFD5C4] flex items-center justify-between">
-                    <span className="text-xs font-bold text-slate-600">Cambio / Vuelto:</span>
-                    <span
-                      className={`text-lg font-black ${
-                        dineroFaltante > 0 ? 'text-rose-600' : 'text-emerald-700'
-                      }`}
-                    >
-                      {dineroFaltante > 0
-                        ? `Faltan ₡${dineroFaltante.toLocaleString('es-CR')}`
-                        : `₡${vuelto.toLocaleString('es-CR')}`}
-                    </span>
-                  </div>
-                </div>
-              )}
-
-              {metodoPagoId !== 1 && (
-                /* SINPE Móvil, Tarjeta o Transferencia */
-                <div className="bg-slate-50 border border-[#DFD5C4] rounded-xl p-4 space-y-2">
-                  <label className="block text-xs font-bold text-slate-700">
-                    Número de Referencia Bancaria / Comprobante
-                  </label>
-                  <input
-                    type="text"
-                    value={referenciaPago}
-                    onChange={(e) => setReferenciaPago(e.target.value)}
-                    placeholder={
-                      metodoPagoId === 5
-                        ? 'Ej. Comprobante SINPE #998811'
-                        : 'Ej. Código de autorización de terminal POS'
-                    }
-                    className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#2D5E46]"
-                  />
-                  <p className="text-[11px] text-[#5C3622]">
-                    Quedará registrado en el comprobante fiscal y control de caja.
+                  <p className="text-[11px] text-[#5C3622] italic">
+                    La factura se emitirá con su saldo completo y estará disponible para abonos futuros en el módulo de Facturación y Cuentas por Cobrar.
                   </p>
                 </div>
+              ) : (
+                <>
+                  {/* Selector de Método de Pago */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
+                      Método de Pago
+                    </label>
+                    <div className="grid grid-cols-3 gap-2">
+                      {metodosPago.map((metodo) => {
+                        const seleccionado = metodoPagoId === metodo.Id_Metodo_Pago;
+                        return (
+                          <button
+                            key={metodo.Id_Metodo_Pago}
+                            type="button"
+                            onClick={() => setMetodoPagoId(metodo.Id_Metodo_Pago)}
+                            className={`p-3 rounded-xl border text-left transition flex flex-col justify-between ${
+                              seleccionado
+                                ? 'border-[#C05A3E] bg-[#F3ECE0] text-[#132B20] font-bold shadow-sm'
+                                : 'border-[#DFD5C4] bg-white text-slate-700 hover:bg-slate-50'
+                            }`}
+                          >
+                            <span className="text-xs leading-tight">{metodo.Nombre}</span>
+                            {seleccionado && <CheckCircle2 className="w-3.5 h-3.5 text-[#2D5E46] mt-2" />}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Formularios según el método */}
+                  {metodoPagoId === 1 && (
+                    /* Efectivo */
+                    <div className="bg-slate-50 border border-[#DFD5C4] rounded-xl p-4 space-y-3">
+                      <label className="block text-xs font-bold text-slate-700">Monto Entregado por Cliente (CRC)</label>
+                      <div className="relative">
+                        <span className="absolute left-3.5 top-1/2 -translate-y-1/2 font-bold text-slate-400">₡</span>
+                        <input
+                          type="number"
+                          value={montoEntregado}
+                          onChange={(e) => setMontoEntregado(e.target.value)}
+                          className="w-full pl-8 pr-3 py-2 text-lg font-bold text-[#132B20] bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#2D5E46]/20 focus:border-[#2D5E46]"
+                          placeholder="0"
+                        />
+                      </div>
+
+                      {/* Chips de monto rápido */}
+                      <div className="flex flex-wrap gap-1.5 pt-1">
+                        {[total, 1000, 2000, 5000, 10000, 20000].map((monto) => (
+                          <button
+                            key={monto}
+                            type="button"
+                            onClick={() => setMontoEntregado(monto.toString())}
+                            className="px-2.5 py-1 text-xs font-semibold bg-white border border-[#DFD5C4] rounded-lg hover:bg-slate-100 text-slate-700 transition"
+                          >
+                            {monto === total ? 'Monto Exacto' : `₡${monto.toLocaleString('es-CR')}`}
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* Cálculo de Cambio / Vuelto */}
+                      <div className="pt-2 border-t border-[#DFD5C4] flex items-center justify-between">
+                        <span className="text-xs font-bold text-slate-600">Cambio / Vuelto:</span>
+                        <span
+                          className={`text-lg font-black ${
+                            dineroFaltante > 0 ? 'text-rose-600' : 'text-emerald-700'
+                          }`}
+                        >
+                          {dineroFaltante > 0
+                            ? `Faltan ₡${dineroFaltante.toLocaleString('es-CR')}`
+                            : `₡${vuelto.toLocaleString('es-CR')}`}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
+                  {metodoPagoId !== 1 && (
+                    /* SINPE Móvil, Tarjeta o Transferencia */
+                    <div className="bg-slate-50 border border-[#DFD5C4] rounded-xl p-4 space-y-2">
+                      <label className="block text-xs font-bold text-slate-700">
+                        Número de Referencia Bancaria / Comprobante
+                      </label>
+                      <input
+                        type="text"
+                        value={referenciaPago}
+                        onChange={(e) => setReferenciaPago(e.target.value)}
+                        placeholder={
+                          metodoPagoId === 5
+                            ? 'Ej. Comprobante SINPE #998811'
+                            : 'Ej. Código de autorización de terminal POS'
+                        }
+                        className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#2D5E46]"
+                      />
+                      <p className="text-[11px] text-[#5C3622]">
+                        Quedará registrado en el comprobante fiscal y control de caja.
+                      </p>
+                    </div>
+                  )}
+                </>
               )}
             </div>
 
@@ -1197,8 +1331,8 @@ export default function PosPage({ onNavigateToFacturacion }) {
               <button
                 type="button"
                 onClick={procesarVentaFinal}
-                disabled={procesandoVenta || (metodoPagoId === 1 && dineroFaltante > 0)}
-                className="flex items-center gap-2 px-5 py-2.5 bg-[#2D5E46] hover:bg-[#3E7356] text-white text-xs font-bold rounded-xl shadow-md shadow-blue-600/30 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={procesandoVenta || (!esVentaCredito && metodoPagoId === 1 && dineroFaltante > 0)}
+                className="flex items-center gap-2 px-5 py-2.5 bg-[#2D5E46] hover:bg-[#3E7356] text-white text-xs font-bold rounded-xl shadow-md transition disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {procesandoVenta ? (
                   <>
@@ -1208,21 +1342,39 @@ export default function PosPage({ onNavigateToFacturacion }) {
                 ) : (
                   <>
                     <CheckCircle2 className="w-4 h-4" />
-                    <span>Confirmar Venta & Facturar</span>
+                    <span>{esVentaCredito ? 'Confirmar Venta a Crédito & Emitir Factura' : 'Confirmar Venta & Facturar'}</span>
                   </>
                 )}
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
-      {/* MODAL DE RECIBO / COMPROBANTE FISCAL */}
-      {modalReciboAbierto && resultadoVenta && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#132B20]/60 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl border border-[#DFD5C4] overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-            {/* Header Éxito */}
-            <div className="bg-emerald-600 text-white p-5 text-center">
+            {/* MODAL DE RECIBO / COMPROBANTE FISCAL */}
+      {modalReciboAbierto && resultadoVenta && createPortal(
+        <div 
+          className="fixed inset-0 w-screen h-screen z-[99999] flex items-center justify-center bg-[#132B20]/75 backdrop-blur-md p-4 overflow-y-auto"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setModalReciboAbierto(false);
+            }
+          }}
+        >
+          <div className="ticket-pos-card relative bg-white rounded-2xl max-w-md w-full shadow-2xl border border-[#DFD5C4] overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            {/* Botón X de Salida Inmediata */}
+            <button
+              type="button"
+              onClick={() => setModalReciboAbierto(false)}
+              className="absolute top-3.5 right-3.5 z-10 w-8 h-8 rounded-full bg-black/25 hover:bg-black/40 text-white flex items-center justify-center transition no-print"
+              title="Cerrar comprobante (Esc)"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            {/* Header éxito (no-print) */}
+            <div className="bg-emerald-600 text-white p-5 text-center no-print pr-12">
               <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-2 text-white">
                 <CheckCircle2 className="w-7 h-7" />
               </div>
@@ -1232,8 +1384,8 @@ export default function PosPage({ onNavigateToFacturacion }) {
               </p>
             </div>
 
-            {/* Formato Ticket Fiscal */}
-            <div className="p-6 space-y-4 font-mono text-xs text-slate-700 bg-slate-50 border-b border-[#DFD5C4]">
+            {/* Formato Ticket Fiscal (Imprimible Limpio) */}
+            <div id="ticket-fiscal-imprimible" className="p-6 space-y-4 font-mono text-xs text-slate-700 bg-slate-50 border-b border-[#DFD5C4]">
               <div className="text-center space-y-0.5 border-b border-dashed border-slate-300 pb-3">
                 <p className="font-bold text-sm text-[#132B20]">LIBRERÍA Y PAPELERÍA MUNDO ESCOLAR</p>
                 <p className="text-[11px] text-[#5C3622]">Cédula Jurídica: 3-101-998877</p>
@@ -1315,29 +1467,47 @@ export default function PosPage({ onNavigateToFacturacion }) {
                   </>
                 )}
               </div>
+
+              <div className="text-center pt-2.5 border-t border-dashed border-slate-300 text-[10px] text-slate-500 space-y-0.5">
+                <p className="font-semibold text-slate-700">¡Gracias por su compra en Mundo Escolar!</p>
+                <p>Factura física autorizada según resolución DGT-R-48-2016</p>
+              </div>
             </div>
 
-            {/* Acciones de Recibo */}
-            <div className="p-4 bg-white flex items-center justify-between gap-3">
-              <button
-                type="button"
-                onClick={() => window.print()}
-                className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition"
-              >
-                <Printer className="w-4 h-4" />
-                <span>Imprimir</span>
-              </button>
-
+            {/* Acciones de Recibo (no-print) */}
+            <div className="p-4 bg-white flex items-center justify-between gap-2.5 no-print border-t border-[#DFD5C4]/60">
               <button
                 type="button"
                 onClick={() => setModalReciboAbierto(false)}
-                className="flex-1 px-4 py-2 bg-[#132B20] hover:bg-[#1A3D2F] text-white text-xs font-bold rounded-xl transition"
+                className="px-3.5 py-2 text-xs font-semibold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-xl transition"
+                title="Cerrar comprobante sin forzar nueva venta"
               >
-                Nueva Venta (Caja Libre)
+                Cerrar
+              </button>
+
+              <button
+                type="button"
+                onClick={() => window.print()}
+                className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-slate-800 bg-slate-200 hover:bg-slate-300 rounded-xl transition"
+                title="Imprimir únicamente el ticket limpio en papel"
+              >
+                <Printer className="w-4 h-4" />
+                <span>Imprimir Ticket</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={iniciarNuevaVenta}
+                className="flex-1 px-4 py-2 bg-[#132B20] hover:bg-[#1A3D2F] text-white text-xs font-bold rounded-xl shadow-sm transition flex items-center justify-center gap-1.5"
+                title="Limpiar caja e iniciar nueva venta con cliente mostrador"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span>Nueva Venta (Caja Libre)</span>
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     
       

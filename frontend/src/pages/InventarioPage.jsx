@@ -89,6 +89,67 @@ export default function InventarioPage() {
 
   const [guardando, setGuardando] = useState(false);
 
+  // Gestión de Categorías (Tabla 13.10 Categoria)
+  const [modalCategoriasAbierto, setModalCategoriasAbierto] = useState(false);
+  const [categoriaEnEdicion, setCategoriaEnEdicion] = useState(null);
+  const [formCategoria, setFormCategoria] = useState({
+    nombre: '',
+    descripcion: '',
+    estado: true,
+  });
+  const [guardandoCategoria, setGuardandoCategoria] = useState(false);
+
+  const abrirNuevaCategoria = () => {
+    setCategoriaEnEdicion(null);
+    setFormCategoria({
+      nombre: '',
+      descripcion: '',
+      estado: true,
+    });
+  };
+
+  const abrirEditarCategoria = (cat) => {
+    setCategoriaEnEdicion(cat);
+    setFormCategoria({
+      nombre: cat.Nombre || '',
+      descripcion: cat.Descripcion || '',
+      estado: cat.Estado ?? true,
+    });
+  };
+
+  const guardarCategoria = async (e) => {
+    e.preventDefault();
+    if (!formCategoria.nombre.trim()) {
+      showToast('El nombre de la categoría es obligatorio', 'warning');
+      return;
+    }
+    setGuardandoCategoria(true);
+    try {
+      if (categoriaEnEdicion) {
+        await api.put(`/catalogos/categorias/${categoriaEnEdicion.Id_Categoria}`, {
+          nombre: formCategoria.nombre.trim(),
+          descripcion: formCategoria.descripcion.trim() || undefined,
+          estado: Boolean(formCategoria.estado),
+        });
+        showToast('Categoría actualizada con éxito', 'success');
+      } else {
+        await api.post('/catalogos/categorias', {
+          nombre: formCategoria.nombre.trim(),
+          descripcion: formCategoria.descripcion.trim() || undefined,
+        });
+        showToast('Categoría creada con éxito', 'success');
+      }
+      abrirNuevaCategoria();
+      cargarDatos();
+    } catch (err) {
+      console.error('Error guardando categoría:', err);
+      showToast(err.response?.data?.message || err.response?.data?.mensaje || 'Error al procesar categoría', 'error');
+    } finally {
+      setGuardandoCategoria(false);
+    }
+  };
+
+
   useEffect(() => {
     cargarDatos();
   }, []);
@@ -457,6 +518,17 @@ export default function InventarioPage() {
             <span>Salida / Merma</span>
           </button>
 
+          <button
+            type="button"
+            onClick={() => {
+              abrirNuevaCategoria();
+              setModalCategoriasAbierto(true);
+            }}
+            className="flex items-center gap-1.5 px-3 py-2 bg-white border border-[#DFD5C4] hover:bg-[#FAF7F0] text-[#132B20] text-xs font-bold rounded-xl shadow-sm transition"
+          >
+            <Layers className="w-4 h-4 text-[#5C3622]" />
+            <span>Gestionar Categorías ({categorias.length})</span>
+          </button>
           <button
             onClick={abrirCrearProducto}
             className="flex items-center gap-1.5 px-3.5 py-2 bg-gradient-to-r from-[#C05A3E] to-[#D97448] hover:from-[#AA4C33] hover:to-[#C05A3E] shadow-terracotta text-white text-xs font-bold rounded-xl shadow-md shadow-blue-600/20 transition"
@@ -918,7 +990,20 @@ export default function InventarioPage() {
 
             <form onSubmit={guardarProducto} className="p-6 space-y-4 text-xs">
               <div>
-                <label className="block font-bold text-[#132B20] mb-1">Categoría *</label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block font-bold text-[#132B20]">Categoría *</label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      abrirNuevaCategoria();
+                      setModalCategoriasAbierto(true);
+                    }}
+                    className="text-[11px] font-bold text-[#C05A3E] hover:underline flex items-center gap-0.5"
+                  >
+                    <Plus className="w-3 h-3" />
+                    + Nueva Categoría
+                  </button>
+                </div>
                 <select
                   value={formDataProducto.idCategoria}
                   onChange={(e) => setFormDataProducto({ ...formDataProducto, idCategoria: e.target.value })}
@@ -1257,6 +1342,180 @@ export default function InventarioPage() {
           </div>
         </div>
       )}
+      {/* ================= MODAL GESTIÓN DE CATEGORÍAS (TABLA 13.10) ================= */}
+      {modalCategoriasAbierto && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#132B20]/60 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] shadow-2xl border border-[#DFD5C4] overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-150">
+            <div className="bg-[#132B20] text-white p-5 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-400/30 flex items-center justify-center text-emerald-400">
+                  <Layers className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-base">Gestión de Categorías de Inventario</h3>
+                  <p className="text-xs text-slate-300">
+                    Catálogo oficial de clasificación de productos y suministros (Tabla 13.10 Categoria)
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setModalCategoriasAbierto(false)}
+                className="p-1 text-slate-400 hover:text-white rounded-lg transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 overflow-y-auto space-y-6 text-xs">
+              {/* Formulario de Alta / Edición de Categoría */}
+              <div className="bg-[#FAF7F0] border border-[#DFD5C4] rounded-2xl p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="font-bold text-sm text-[#132B20] flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-amber-500" />
+                    {categoriaEnEdicion ? `Editar Categoría #${categoriaEnEdicion.Id_Categoria}` : 'Crear Nueva Categoría'}
+                  </h4>
+                  {categoriaEnEdicion && (
+                    <button
+                      type="button"
+                      onClick={abrirNuevaCategoria}
+                      className="text-xs text-[#C05A3E] font-semibold hover:underline"
+                    >
+                      Cancelar Edición (Crear Nueva)
+                    </button>
+                  )}
+                </div>
+
+                <form onSubmit={guardarCategoria} className="space-y-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="sm:col-span-1">
+                      <label className="block font-bold text-[#132B20] mb-1">
+                        Nombre (max 20 car.) *
+                      </label>
+                      <input
+                        type="text"
+                        maxLength={20}
+                        value={formCategoria.nombre}
+                        onChange={(e) => setFormCategoria({ ...formCategoria, nombre: e.target.value })}
+                        placeholder="Ej. Cuadernos"
+                        className="w-full px-3 py-2 bg-white border border-[#DFD5C4] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#2D5E46] font-bold"
+                        required
+                      />
+                    </div>
+
+                    <div className="sm:col-span-2">
+                      <label className="block font-bold text-[#132B20] mb-1">
+                        Descripción (max 150 car.)
+                      </label>
+                      <input
+                        type="text"
+                        maxLength={150}
+                        value={formCategoria.descripcion}
+                        onChange={(e) => setFormCategoria({ ...formCategoria, descripcion: e.target.value })}
+                        placeholder="Ej. Cuadernos cosidos, espiral, universitarios y de dibujo"
+                        className="w-full px-3 py-2 bg-white border border-[#DFD5C4] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#2D5E46]"
+                      />
+                    </div>
+                  </div>
+
+                  {categoriaEnEdicion && (
+                    <div className="w-48">
+                      <label className="block font-bold text-[#132B20] mb-1">Estado</label>
+                      <select
+                        value={formCategoria.estado ? '1' : '0'}
+                        onChange={(e) => setFormCategoria({ ...formCategoria, estado: e.target.value === '1' })}
+                        className="w-full px-3 py-1.5 bg-white border border-[#DFD5C4] rounded-xl font-semibold"
+                      >
+                        <option value="1">Activa (Visible)</option>
+                        <option value="0">Inactiva (Oculta)</option>
+                      </select>
+                    </div>
+                  )}
+
+                  <div className="flex justify-end pt-1">
+                    <button
+                      type="submit"
+                      disabled={guardandoCategoria}
+                      className="px-4 py-2 bg-[#132B20] hover:bg-[#1A3D2F] text-white font-bold rounded-xl shadow-sm transition disabled:opacity-50"
+                    >
+                      {guardandoCategoria
+                        ? 'Guardando...'
+                        : categoriaEnEdicion
+                        ? 'Actualizar Categoría'
+                        : 'Guardar Categoría'}
+                    </button>
+                  </div>
+                </form>
+              </div>
+
+              {/* Listado de Categorías Existentes */}
+              <div>
+                <h4 className="font-bold text-xs uppercase tracking-wider text-[#5C3622] mb-2">
+                  Categorías en Base de Datos ({categorias.length})
+                </h4>
+                <div className="border border-[#DFD5C4] rounded-xl overflow-hidden shadow-sm">
+                  <table className="w-full text-left">
+                    <thead className="bg-[#FAF7F0] text-[#5C3622] font-bold border-b border-[#DFD5C4] text-[11px] uppercase">
+                      <tr>
+                        <th className="py-2.5 px-3">ID</th>
+                        <th className="py-2.5 px-3">Nombre</th>
+                        <th className="py-2.5 px-3">Descripción</th>
+                        <th className="py-2.5 px-3">Estado</th>
+                        <th className="py-2.5 px-3 text-center">Acciones</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 font-medium text-[#132B20]">
+                      {categorias.map((cat) => (
+                        <tr key={cat.Id_Categoria} className="hover:bg-[#FAF7F0]/80 transition-colors">
+                          <td className="py-2.5 px-3 font-mono font-bold text-[#5C3622]">
+                            #{cat.Id_Categoria}
+                          </td>
+                          <td className="py-2.5 px-3 font-bold text-[#132B20] whitespace-nowrap">
+                            {cat.Nombre}
+                          </td>
+                          <td className="py-2.5 px-3 text-slate-600 max-w-xs truncate" title={cat.Descripcion}>
+                            {cat.Descripcion || <span className="italic text-slate-400">Sin descripción</span>}
+                          </td>
+                          <td className="py-2.5 px-3 whitespace-nowrap">
+                            <span
+                              className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                cat.Estado !== false
+                                  ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                                  : 'bg-rose-50 text-rose-800 border border-rose-200'
+                              }`}
+                            >
+                              {cat.Estado !== false ? 'Activa' : 'Inactiva'}
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-3 text-center whitespace-nowrap">
+                            <button
+                              type="button"
+                              onClick={() => abrirEditarCategoria(cat)}
+                              className="p-1.5 text-slate-500 hover:text-[#132B20] hover:bg-slate-100 rounded-lg transition"
+                              title="Editar Categoría"
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-4 bg-[#FAF7F0] border-t border-[#DFD5C4] flex justify-end">
+              <button
+                onClick={() => setModalCategoriasAbierto(false)}
+                className="px-4 py-2 bg-[#132B20] text-white font-bold rounded-xl text-xs hover:bg-[#1A3D2F] transition"
+              >
+                Cerrar Ventana
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+

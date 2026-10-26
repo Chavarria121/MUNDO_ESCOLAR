@@ -26,6 +26,12 @@ export class CrearClienteParticularDto {
   @MaxLength(50)
   apellido2?: string;
 
+  @ApiPropertyOptional({ example: 'cliente@ejemplo.com', maxLength: 100 })
+  @IsString()
+  @IsOptional()
+  @MaxLength(100)
+  correo?: string;
+
   @ApiPropertyOptional({ example: '8877-6655', maxLength: 30 })
   @IsString()
   @IsOptional()
@@ -42,6 +48,18 @@ export class CrearClienteParticularDto {
   @IsInt()
   @IsOptional()
   idUsuario?: number;
+
+  @ApiPropertyOptional({ example: 'cli.alejandro', maxLength: 50 })
+  @IsString()
+  @IsOptional()
+  @MaxLength(50)
+  nombreUsuario?: string;
+
+  @ApiPropertyOptional({ example: 'MiClave123!', maxLength: 50 })
+  @IsString()
+  @IsOptional()
+  @MaxLength(50)
+  contrasena?: string;
 }
 
 export class CrearClienteInstitucionalDto {
@@ -91,9 +109,32 @@ export class CrearClienteInstitucionalDto {
   @IsInt()
   @IsOptional()
   idUsuario?: number;
+
+  @ApiPropertyOptional({ example: 'inst.liceo', maxLength: 50 })
+  @IsString()
+  @IsOptional()
+  @MaxLength(50)
+  nombreUsuario?: string;
+
+  @ApiPropertyOptional({ example: 'MiClave123!', maxLength: 50 })
+  @IsString()
+  @IsOptional()
+  @MaxLength(50)
+  contrasena?: string;
 }
 
 export class ActualizarClienteDto {
+  @ApiPropertyOptional({ example: 'NuevaClave123!', maxLength: 50 })
+  @IsString()
+  @IsOptional()
+  @MaxLength(50)
+  contrasena?: string;
+  @ApiPropertyOptional({ example: 'cliente@ejemplo.com', maxLength: 100 })
+  @IsString()
+  @IsOptional()
+  @MaxLength(100)
+  correo?: string;
+
   @ApiPropertyOptional({ example: '8877-9900', maxLength: 30 })
   @IsString()
   @IsOptional()

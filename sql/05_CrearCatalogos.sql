@@ -146,8 +146,8 @@ IF NOT EXISTS (SELECT 1 FROM Estado_Venta WHERE Nombre_Estado = 'Anulada')
 GO
 
 -- 8. Estado_Factura
-IF NOT EXISTS (SELECT 1 FROM Estado_Factura WHERE Nombre_Estado = 'Emitida')
-    INSERT INTO Estado_Factura (Nombre_Estado) VALUES ('Emitida');
+IF NOT EXISTS (SELECT 1 FROM Estado_Factura WHERE Nombre_Estado = 'Pendiente')
+    INSERT INTO Estado_Factura (Nombre_Estado) VALUES ('Pendiente');
 
 IF NOT EXISTS (SELECT 1 FROM Estado_Factura WHERE Nombre_Estado = 'Parcial')
     INSERT INTO Estado_Factura (Nombre_Estado) VALUES ('Parcial');

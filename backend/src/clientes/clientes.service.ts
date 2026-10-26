@@ -122,8 +122,9 @@ export class ClientesService {
     let idUsuarioCliente = dto.idUsuario;
     if (!idUsuarioCliente) {
       const num = dto.identificacion.replace(/[^0-9]/g, '');
-      const nomUser = 'cli.' + num;
-      const correoUser = nomUser + '@mundoescolar.cr';
+      const nomUser = (dto.nombreUsuario && dto.nombreUsuario.trim()) || ('cli.' + num);
+      const correoUser = (dto.correo && dto.correo.trim()) || (nomUser + '@mundoescolar.cr');
+      const passPlano = (dto.contrasena && dto.contrasena.trim()) || 'Cliente2026!';
 
       // 1. Verificar si el usuario ya existe en Usuario
       const existentes = await this.sql.consultarQuery<{ Id_Usuario: number; Vinculado: number }>(
@@ -135,6 +136,12 @@ export class ClientesService {
       if (existentes && existentes.length > 0) {
         if (existentes[0].Vinculado === 0) {
           idUsuarioCliente = existentes[0].Id_Usuario;
+          if (dto.contrasena && dto.contrasena.trim()) {
+            await this.sql.consultarQuery(
+              `UPDATE Usuario SET Contrasena = @hash WHERE Id_Usuario = @id`,
+              { hash: hashContrasena(passPlano), id: idUsuarioCliente },
+            );
+          }
         } else {
           // Generar sufijo único para evitar colisión de UQ_Cliente_Usuario
           const rnd = Math.floor(1000 + Math.random() * 9000);
@@ -144,7 +151,7 @@ export class ClientesService {
             {
               Nombre_Usuario: nomUserNuevo,
               Correo: `${nomUserNuevo}@mundoescolar.cr`,
-              ContrasenaHash: hashContrasena('Cliente2026!'),
+              ContrasenaHash: hashContrasena(passPlano),
             },
             { idUsuario: idEjecutor, salidas: { Id_Usuario_Nuevo: 'int' } },
           );
@@ -156,7 +163,7 @@ export class ClientesService {
           {
             Nombre_Usuario: nomUser,
             Correo: correoUser,
-            ContrasenaHash: hashContrasena('Cliente2026!'),
+            ContrasenaHash: hashContrasena(passPlano),
           },
           { idUsuario: idEjecutor, salidas: { Id_Usuario_Nuevo: 'int' } },
         );
@@ -182,11 +189,13 @@ export class ClientesService {
   }
 
     async crearInstitucional(dto: CrearClienteInstitucionalDto, idEjecutor: number) {
+    const idAdmin = idEjecutor || 1;
     let idUsuarioCliente = dto.idUsuario;
     if (!idUsuarioCliente) {
       const num = dto.cedulaJuridica.replace(/[^0-9]/g, '');
-      const nomUser = 'inst.' + num;
-      const correoUser = nomUser + '@mundoescolar.cr';
+      const nomUser = (dto.nombreUsuario && dto.nombreUsuario.trim()) || ('inst.' + num);
+      const correoUser = (dto.correoContacto && dto.correoContacto.trim()) || (nomUser + '@mundoescolar.cr');
+      const passPlano = (dto.contrasena && dto.contrasena.trim()) || 'Cliente2026!';
 
       const existentes = await this.sql.consultarQuery<{ Id_Usuario: number; Vinculado: number }>(
         `SELECT u.Id_Usuario, (SELECT COUNT(1) FROM Cliente c WHERE c.Id_Usuario = u.Id_Usuario) AS Vinculado
@@ -205,7 +214,7 @@ export class ClientesService {
             {
               Nombre_Usuario: nomUserNuevo,
               Correo: `${nomUserNuevo}@mundoescolar.cr`,
-              ContrasenaHash: hashContrasena('Cliente2026!'),
+              ContrasenaHash: hashContrasena(passPlano),
             },
             { idUsuario: idEjecutor, salidas: { Id_Usuario_Nuevo: 'int' } },
           );
@@ -217,7 +226,7 @@ export class ClientesService {
           {
             Nombre_Usuario: nomUser,
             Correo: correoUser,
-            ContrasenaHash: hashContrasena('Cliente2026!'),
+            ContrasenaHash: hashContrasena(passPlano),
           },
           { idUsuario: idEjecutor, salidas: { Id_Usuario_Nuevo: 'int' } },
         );
@@ -243,7 +252,13 @@ export class ClientesService {
     return r.filas[0] ?? { Id_Cliente: r.salida.Id_Cliente_Nuevo };
   }
 
-  actualizar(idCliente: number, dto: ActualizarClienteDto, idEjecutor: number) {
+  async actualizar(idCliente: number, dto: ActualizarClienteDto, idEjecutor: number) {
+    if (dto.correo && dto.correo.trim()) {
+      await this.sql.consultarQuery(
+        `UPDATE Usuario SET Correo = @correo WHERE Id_Usuario = (SELECT Id_Usuario FROM Cliente WHERE Id_Cliente = @id)`,
+        { correo: dto.correo.trim(), id: idCliente },
+      );
+    }
     return this.sql.consultarSPUno(
       'SP_Cliente_Actualizar',
       {
@@ -282,4 +297,23 @@ export class ClientesService {
       { idUsuario: idEjecutor },
     );
   }
+
+  async obtenerPerfilPorUsuario(idUsuario: number) {
+    const filas = await this.sql.consultarQuery<any>(
+      `SELECT * FROM VW_ClientesActivos WHERE Id_Usuario = @id`,
+      { id: idUsuario },
+    );
+    return filas[0] ?? null;
+  }
+
+  async consultarHistorialPorUsuario(idUsuario: number) {
+    const perfil = await this.obtenerPerfilPorUsuario(idUsuario);
+    if (!perfil) return [];
+    return this.sql.consultarSP('SP_Cliente_HistorialOperaciones', {
+      Id_Cliente: perfil.Id_Cliente,
+      FechaInicio: null,
+      FechaFin: null,
+    });
+  }
+
 }

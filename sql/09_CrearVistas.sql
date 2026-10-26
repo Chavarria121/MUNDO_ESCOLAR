@@ -44,14 +44,32 @@ SELECT
         WHEN tc.Nombre = 'Institucional' THEN ci.Razon_Social
         ELSE 'No especificado'
     END AS Nombre_O_RazonSocial,
+    cp.Nombre,
+    cp.Apellido1,
+    cp.Apellido2,
+    ci.Razon_Social,
+    ci.Cedula_Juridica,
     ci.Nombre_Contacto,
     ci.Telefono_Contacto,
     ci.Correo_Contacto,
+    COALESCE(ci.Correo_Contacto, u.Correo) AS Correo,
+    u.Correo AS Correo_Usuario,
     c.Telefono,
     c.Direccion,
     c.Id_Usuario,
     u.Nombre_Usuario,
-    c.Estado
+    c.Estado,
+    CAST(CASE WHEN EXISTS (
+        SELECT 1 FROM Cliente_Condicion_Pago ccp 
+        INNER JOIN Condicion_Pago cpago ON ccp.Id_Condicion_Pago = cpago.Id_Condicion_Pago
+        WHERE ccp.Id_Cliente = c.Id_Cliente AND ccp.Estado = 1 AND cpago.Dias_Credito > 0
+    ) THEN 1 ELSE 0 END AS BIT) AS Tiene_Credito_Activo,
+    (
+        SELECT STRING_AGG(cpago.Nombre, ', ')
+        FROM Cliente_Condicion_Pago ccp 
+        INNER JOIN Condicion_Pago cpago ON ccp.Id_Condicion_Pago = cpago.Id_Condicion_Pago
+        WHERE ccp.Id_Cliente = c.Id_Cliente AND ccp.Estado = 1
+    ) AS Condiciones_Autorizadas
 FROM Cliente c
 INNER JOIN Tipo_Cliente tc ON c.Id_Tipo_Cliente = tc.Id_Tipo_Cliente
 LEFT JOIN Cliente_Particular cp ON c.Id_Cliente = cp.Id_Cliente
@@ -76,6 +94,11 @@ SELECT
         WHEN tp.Nombre = 'Institucional' THEN pi.Razon_Social
         ELSE 'No especificado'
     END AS Nombre_O_RazonSocial,
+    pp.Nombre,
+    pp.Apellido1,
+    pp.Apellido2,
+    pi.Razon_Social,
+    pi.Cedula_Juridica,
     pi.Nombre_Contacto,
     pi.Telefono_Contacto,
     pi.Correo_Contacto,
@@ -141,6 +164,7 @@ SELECT
     p.Id_Producto,
     c.Nombre AS Categoria,
     p.Nombre,
+    p.Descripcion,
     p.Precio_Venta,
     p.Stock_Actual,
     p.Punto_Reorden,

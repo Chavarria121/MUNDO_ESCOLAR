@@ -1,4 +1,4 @@
-@tailwind base;
+﻿@tailwind base;
 @tailwind components;
 @tailwind utilities;
 
@@ -14,10 +14,13 @@
 }
 
 @layer base {
+  html {
+    scroll-behavior: smooth;
+  }
   body {
     background-color: #FAF7F0;
     color: #132B20;
-    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    font-feature-settings: cv02, cv03, cv04, cv11;
   }
 }
 
@@ -64,4 +67,135 @@
 
 .animate-slide-up {
   animation: slideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* =========================================================================
+   SISTEMA INTEGRAL DE IMPRESIÓN PROFESIONAL - MUNDO ESCOLAR
+   Garantiza 0 páginas en blanco y formateo limpio para tickets, facturas y reportes
+   ========================================================================= */
+@media print {
+  @page {
+    margin: 8mm;
+    size: auto;
+  }
+
+  /* Reset total del documento: eliminamos desbordes y alturas forzadas de pantalla */
+  html,
+  body {
+    background: #ffffff !important;
+    color: #111827 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    font-size: 11pt !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Ocultar elementos de UI no imprimibles */
+  .no-print,
+  .no-print *,
+  aside,
+  nav,
+  header:not(.print-header),
+  button,
+  input,
+  select,
+  .glass-panel,
+  .glass-panel-dark {
+    display: none !important;
+  }
+
+  /* Si hay un modal activo montado vía Portal en document.body,
+     ocultamos #root completamente para evitar que la página de fondo ocupe espacio o genere páginas en blanco */
+  body.imprimiendo-modal #root,
+  body:has(.modal-impresion-activa) #root {
+    display: none !important;
+  }
+
+  /* Contenedor del modal en modo impresión */
+  .modal-impresion-activa {
+    position: static !important;
+    display: block !important;
+    background: transparent !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    width: 100% !important;
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+  }
+
+  .modal-impresion-activa > div {
+    position: static !important;
+    box-shadow: none !important;
+    border: 1px solid #DFD5C4 !important;
+    border-radius: 6px !important;
+    max-height: none !important;
+    height: auto !important;
+    overflow: visible !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 auto !important;
+    page-break-after: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  /* Ajuste específico para el Ticket de POS */
+  .modal-impresion-activa.ticket-pos-wrapper > div,
+  .ticket-pos-card {
+    max-width: 380px !important;
+    margin: 0 auto !important;
+    border: 1px dashed #6b7280 !important;
+    border-radius: 4px !important;
+  }
+
+  #ticket-fiscal-imprimible {
+    position: static !important;
+    margin: 0 auto !important;
+    width: 100% !important;
+    box-shadow: none !important;
+    border: none !important;
+    background: #ffffff !important;
+    page-break-after: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  /* Reset estructural para vistas de reportes y bitácoras (cuando #root está activo) */
+  #root,
+  main {
+    margin: 0 !important;
+    padding: 0 !important;
+    min-height: 0 !important;
+    height: auto !important;
+    width: 100% !important;
+    overflow: visible !important;
+    display: block !important;
+  }
+
+  /* Tablas de impresión impecables */
+  table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    font-size: 9pt !important;
+  }
+
+  thead {
+    display: table-header-group !important;
+  }
+
+  tr {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  th,
+  td {
+    padding: 5px 8px !important;
+  }
 }

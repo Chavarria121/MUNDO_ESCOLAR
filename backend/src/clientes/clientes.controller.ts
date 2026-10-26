@@ -27,13 +27,13 @@ import {
 } from './dto/clientes.dto';
 
 @ApiTags('Clientes')
-@ApiBearerAuth()
-@UseGuards(JwtAuthGuard, PermisosGuard)
 @Controller('clientes')
 export class ClientesController {
   constructor(private readonly clientes: ClientesService) {}
 
   @Get()
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, PermisosGuard)
   @RequierePermisos(PERMISOS.CLIENTES_CONSULTAR)
   @ApiOperation({ summary: 'Consultar y buscar clientes (SP_Cliente_Consultar)' })
   @ApiQuery({ name: 'busqueda', required: false, description: 'Filtro por nombre, identificación o razón social' })
@@ -41,15 +41,16 @@ export class ClientesController {
     return this.clientes.consultar(undefined, busqueda);
   }
 
-  
+  // Consulta pública a TSE / Hacienda de Costa Rica (disponible para Landing, POS y ERP)
   @Get('tse/:identificacion')
-  @RequierePermisos(PERMISOS.CLIENTES_CONSULTAR)
   @ApiOperation({ summary: 'Consultar datos de persona o empresa en TSE / Hacienda Costa Rica' })
   consultarTse(@Param('identificacion') identificacion: string) {
     return this.clientes.consultarTse(identificacion);
   }
 
   @Get('activos')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, PermisosGuard)
   @RequierePermisos(PERMISOS.CLIENTES_CONSULTAR)
   @ApiOperation({ summary: 'Listar clientes activos con datos completos (VW_ClientesActivos)' })
   activos() {
@@ -57,6 +58,8 @@ export class ClientesController {
   }
 
   @Get(':id')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, PermisosGuard)
   @RequierePermisos(PERMISOS.CLIENTES_CONSULTAR)
   @ApiOperation({ summary: 'Consultar un cliente por su ID (SP_Cliente_Consultar)' })
   obtenerPorId(@Param('id', ParseIntPipe) id: number) {
@@ -64,27 +67,31 @@ export class ClientesController {
   }
 
   @Get(':id/historial')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, PermisosGuard)
   @RequierePermisos(PERMISOS.CLIENTES_CONSULTAR)
   @ApiOperation({ summary: 'Historial de compras, facturas y saldos del cliente (SP_Cliente_HistorialOperaciones)' })
   historial(@Param('id', ParseIntPipe) id: number, @Query() dto: ConsultarHistorialDto) {
     return this.clientes.consultarHistorial(id, dto);
   }
 
+  // Registro de cliente particular (Público desde Landing o colaboradores con sesión)
   @Post('particular')
-  @RequierePermisos(PERMISOS.CLIENTES_GESTIONAR)
   @ApiOperation({ summary: 'Registrar nuevo cliente particular (SP_Cliente_CrearPerfil)' })
-  crearParticular(@Body() dto: CrearClienteParticularDto, @UsuarioActual() u: UsuarioSesion) {
-    return this.clientes.crearParticular(dto, u.idUsuario);
+  crearParticular(@Body() dto: CrearClienteParticularDto, @UsuarioActual() u?: UsuarioSesion) {
+    return this.clientes.crearParticular(dto, u?.idUsuario ?? 1);
   }
 
+  // Registro de cliente institucional (Público desde Landing o colaboradores con sesión)
   @Post('institucional')
-  @RequierePermisos(PERMISOS.CLIENTES_GESTIONAR)
   @ApiOperation({ summary: 'Registrar nuevo cliente institucional (SP_Cliente_CrearPerfil)' })
-  crearInstitucional(@Body() dto: CrearClienteInstitucionalDto, @UsuarioActual() u: UsuarioSesion) {
-    return this.clientes.crearInstitucional(dto, u.idUsuario);
+  crearInstitucional(@Body() dto: CrearClienteInstitucionalDto, @UsuarioActual() u?: UsuarioSesion) {
+    return this.clientes.crearInstitucional(dto, u?.idUsuario ?? 1);
   }
 
   @Put(':id')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, PermisosGuard)
   @RequierePermisos(PERMISOS.CLIENTES_GESTIONAR)
   @ApiOperation({ summary: 'Actualizar datos de cliente (SP_Cliente_Actualizar)' })
   actualizar(
@@ -96,6 +103,8 @@ export class ClientesController {
   }
 
   @Get(':id/condiciones-pago')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, PermisosGuard)
   @RequierePermisos(PERMISOS.CLIENTES_CONSULTAR)
   @ApiOperation({ summary: 'Consultar condiciones de pago del cliente (SP_ClienteCondicionPago_Consultar)' })
   consultarCondicionesPago(@Param('id', ParseIntPipe) id: number) {
@@ -103,6 +112,8 @@ export class ClientesController {
   }
 
   @Post(':id/condiciones-pago')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, PermisosGuard)
   @RequierePermisos(PERMISOS.CLIENTES_CONDICIONES_PAGO)
   @ApiOperation({ summary: 'Autorizar condición de crédito al cliente (SP_ClienteCondicionPago_Autorizar)' })
   autorizarCondicionPago(
@@ -114,6 +125,8 @@ export class ClientesController {
   }
 
   @Delete(':id/condiciones-pago/:idCondicion')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, PermisosGuard)
   @RequierePermisos(PERMISOS.CLIENTES_CONDICIONES_PAGO)
   @ApiOperation({ summary: 'Deshabilitar condición de crédito (SP_ClienteCondicionPago_Deshabilitar)' })
   deshabilitarCondicionPago(
@@ -123,4 +136,35 @@ export class ClientesController {
   ) {
     return this.clientes.deshabilitarCondicionPago(id, idCondicion, u.idUsuario);
   }
+
+  // Endpoints pblicos del Portal de Autoservicio para Clientes autenticados (RF1.5, RF1.11)
+  @Get('portal/mi-perfil')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({ summary: 'Obtener el perfil e historial del cliente en sesin para el Portal de Clientes' })
+  async miPerfil(@UsuarioActual() u: UsuarioSesion) {
+    const perfil = await this.clientes.obtenerPerfilPorUsuario(u.idUsuario);
+    if (!perfil) {
+      return { esCliente: false, mensaje: 'El usuario no posee perfil de cliente asociado' };
+    }
+    const historial = await this.clientes.consultarHistorialPorUsuario(u.idUsuario);
+    return {
+      esCliente: true,
+      perfil,
+      historial,
+    };
+  }
+
+  @Put('portal/mi-perfil')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({ summary: 'Actualizar datos de contacto del cliente en sesin (RF1.5)' })
+  async actualizarMiPerfil(@UsuarioActual() u: UsuarioSesion, @Body() dto: ActualizarClienteDto) {
+    const perfil = await this.clientes.obtenerPerfilPorUsuario(u.idUsuario);
+    if (!perfil) {
+      return { exito: false, mensaje: 'No posee perfil de cliente' };
+    }
+    return this.clientes.actualizar(perfil.Id_Cliente, dto, u.idUsuario);
+  }
+
 }
