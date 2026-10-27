@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import {
+  LineChart,
   ShoppingCart,
   Receipt,
   Boxes,
@@ -174,6 +175,40 @@ export default function DashboardOverview({ onNavigate }) {
           <p className="text-xs text-[#2D5E46] font-semibold mt-1">
             Particulares e Institucionales
           </p>
+        </div>
+      </div>
+
+      {/* Widget Destacado: Data Warehouse & Business Intelligence (Power BI Ready) */}
+      <div className="bg-gradient-to-r from-[#132B20] via-[#1A3D2F] to-[#2D5E46] text-[#FAF7F0] rounded-3xl p-6 shadow-forest border border-[#2D5E46]/60 flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="flex items-center gap-4">
+          <div className="w-12 h-12 rounded-2xl bg-white/10 backdrop-blur-md border border-white/20 flex items-center justify-center text-[#D4A373] shadow-md shrink-0">
+            <LineChart className="w-6 h-6 text-[#D4A373]" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h3 className="text-base font-extrabold text-[#FAF7F0] tracking-tight">
+                Data Warehouse & Inteligencia de Negocios (BI)
+              </h3>
+              <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">
+                Esquema dw Activo
+              </span>
+              <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-white/10 text-[#DFD5C4] border border-white/20">
+                Sincronización Power BI
+              </span>
+            </div>
+            <p className="text-xs text-[#DFD5C4]/90 mt-1">
+              Métricas consolidadas, análisis de categorías, distribución de métodos de pago y sincronización en un clic.
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-3 shrink-0">
+          <button
+            onClick={() => onNavigate('bi')}
+            className="px-4 py-2.5 bg-[#FAF7F0] hover:bg-white text-[#132B20] font-black text-xs rounded-xl shadow-md transition active:scale-95 flex items-center gap-2"
+          >
+            <span>Ver Tablero BI Completo</span>
+            <ArrowUpRight className="w-4 h-4 text-[#C05A3E]" />
+          </button>
         </div>
       </div>
 
