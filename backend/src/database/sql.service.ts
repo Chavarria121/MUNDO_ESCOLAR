@@ -36,11 +36,11 @@ export class SqlService implements OnModuleInit, OnModuleDestroy {
   async obtenerPool(): Promise<sql.ConnectionPool> {
     if (this.pool && this.pool.connected) return this.pool;
 
-    const host = this.config.get<string>('database.host', 'localhost');
+    const host = this.config.get<string>('database.server', 'localhost');
     const port = this.config.get<number>('database.port', 1433);
     const user = this.config.get<string>('database.user', 'sa');
     const password = this.config.get<string>('database.password', 'MundoEscolar2026*');
-    const database = this.config.get<string>('database.database', 'MUNDO_ESCOLAR');
+    const database = this.config.get<string>('database.name', 'MUNDO_ESCOLAR');
 
     const configSql: sql.config = {
       server: host,
