@@ -45,6 +45,23 @@ GO
 ALTER AUTHORIZATION ON DATABASE::DW_MundoEscolar TO sa;
 GO
 
+IF OBJECT_ID('dbo.SCD2_ControlH04', 'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.SCD2_ControlH04 (
+        Id_Control TINYINT NOT NULL PRIMARY KEY
+            CONSTRAINT CK_SCD2_ControlH04_Id CHECK (Id_Control = 1),
+        Fecha_Corte DATETIME NOT NULL
+    );
+END
+GO
+
+IF NOT EXISTS (SELECT 1 FROM dbo.SCD2_ControlH04 WHERE Id_Control = 1)
+BEGIN
+    INSERT INTO dbo.SCD2_ControlH04 (Id_Control, Fecha_Corte)
+    VALUES (1, GETDATE());
+END
+GO
+
 -- 2. CREACIÓN DE LAS DIMENSIONES COMPARTIDAS (DW_01 a DW_07)
 
 -- DW_01: DimFecha (Calendario analítico)
@@ -78,9 +95,14 @@ BEGIN
         Estado_Operacional BIT NOT NULL,
         Fecha_Inicio DATETIME NOT NULL,
         Fecha_Fin DATETIME NULL,
-        Es_Actual BIT NOT NULL
+        Es_Actual BIT NOT NULL,
+        CONSTRAINT CK_DimCliente_Vigencia_H04 CHECK (
+            (Es_Actual = 1 AND Fecha_Fin IS NULL)
+            OR (Es_Actual = 0 AND Fecha_Fin IS NOT NULL AND Fecha_Fin > Fecha_Inicio)
+        )
     );
     CREATE NONCLUSTERED INDEX IX_DimCliente_IdCliente ON dbo.DimCliente(Id_Cliente, Es_Actual);
+    CREATE UNIQUE INDEX UX_DimCliente_Id_Actual_H04 ON dbo.DimCliente(Id_Cliente) WHERE Es_Actual = 1;
 END
 GO
 
@@ -93,8 +115,16 @@ BEGIN
         Nombre_Producto VARCHAR(100) NOT NULL,
         Categoria VARCHAR(50) NOT NULL,
         Precio_Venta_Actual DECIMAL(12,2) NOT NULL,
-        Estado BIT NOT NULL
+        Estado BIT NOT NULL,
+        Fecha_Inicio DATETIME NOT NULL,
+        Fecha_Fin DATETIME NULL,
+        Es_Actual BIT NOT NULL,
+        CONSTRAINT CK_DimProducto_Vigencia_H04 CHECK (
+            (Es_Actual = 1 AND Fecha_Fin IS NULL)
+            OR (Es_Actual = 0 AND Fecha_Fin IS NOT NULL AND Fecha_Fin > Fecha_Inicio)
+        )
     );
+    CREATE UNIQUE INDEX UX_DimProducto_Id_Actual_H04 ON dbo.DimProducto(Id_Producto) WHERE Es_Actual = 1;
 END
 GO
 
@@ -239,7 +269,7 @@ SELECT
     c.Telefono,
     c.Direccion,
     c.Estado,
-    GETDATE(),
+    (SELECT Fecha_Corte FROM dbo.SCD2_ControlH04 WHERE Id_Control = 1),
     1
 FROM MUNDO_ESCOLAR.dbo.Cliente c
 INNER JOIN MUNDO_ESCOLAR.dbo.Tipo_Cliente tc ON c.Id_Tipo_Cliente = tc.Id_Tipo_Cliente
@@ -249,8 +279,9 @@ WHERE NOT EXISTS (SELECT 1 FROM dbo.DimCliente dc WHERE dc.Id_Cliente = c.Id_Cli
 GO
 
 -- Productos
-INSERT INTO dbo.DimProducto (Id_Producto, Nombre_Producto, Categoria, Precio_Venta_Actual, Estado)
-SELECT p.Id_Producto, p.Nombre, c.Nombre, p.Precio_Venta, p.Estado
+INSERT INTO dbo.DimProducto (Id_Producto, Nombre_Producto, Categoria, Precio_Venta_Actual, Estado, Fecha_Inicio, Fecha_Fin, Es_Actual)
+SELECT p.Id_Producto, p.Nombre, c.Nombre, p.Precio_Venta, p.Estado,
+       (SELECT Fecha_Corte FROM dbo.SCD2_ControlH04 WHERE Id_Control = 1), NULL, 1
 FROM MUNDO_ESCOLAR.dbo.Producto p
 INNER JOIN MUNDO_ESCOLAR.dbo.Categoria c ON p.Id_Categoria = c.Id_Categoria
 WHERE NOT EXISTS (SELECT 1 FROM dbo.DimProducto dp WHERE dp.Id_Producto = p.Id_Producto);
@@ -287,8 +318,32 @@ WHERE NOT EXISTS (SELECT 1 FROM dbo.DimMetodoPago dmp WHERE dmp.Id_Metodo_Pago =
 GO
 
 -- Hechos: FactVenta
+-- Para ventas anteriores al corte, la version actual es un fallback de compatibilidad; no reconstruye la historia real.
+IF EXISTS (
+    SELECT 1
+    FROM MUNDO_ESCOLAR.dbo.Venta v
+    INNER JOIN MUNDO_ESCOLAR.dbo.Estado_Venta ev ON v.Id_Estado_Venta = ev.Id_Estado_Venta
+    WHERE ev.Nombre_Estado = 'Confirmada'
+      AND NOT EXISTS (
+          SELECT 1
+          FROM dbo.DimCliente dc
+          WHERE dc.Id_Cliente = v.Id_Cliente
+            AND (
+                (v.Fecha >= dc.Fecha_Inicio AND (dc.Fecha_Fin IS NULL OR v.Fecha < dc.Fecha_Fin))
+                OR (
+                    v.Fecha < (SELECT Fecha_Corte FROM dbo.SCD2_ControlH04 WHERE Id_Control = 1)
+                    AND dc.Es_Actual = 1
+                )
+            )
+      )
+)
+BEGIN
+    ;THROW 51066, 'Carga DW detenida: no existe version DimCliente valida para una venta confirmada.', 1;
+END
+GO
+
 INSERT INTO dbo.FactVenta (Id_Venta, Sk_Fecha, Sk_Cliente, Sk_Vendedor, Sk_Condicion_Pago, Subtotal, Impuesto, Monto_Total)
-SELECT 
+SELECT
     v.Id_Venta,
     YEAR(v.Fecha) * 10000 + MONTH(v.Fecha) * 100 + DAY(v.Fecha) AS Sk_Fecha,
     dc.Sk_Cliente,
@@ -299,7 +354,22 @@ SELECT
     v.Monto_Total
 FROM MUNDO_ESCOLAR.dbo.Venta v
 INNER JOIN MUNDO_ESCOLAR.dbo.Estado_Venta ev ON v.Id_Estado_Venta = ev.Id_Estado_Venta
-INNER JOIN dbo.DimCliente dc ON v.Id_Cliente = dc.Id_Cliente AND dc.Es_Actual = 1
+CROSS APPLY (
+    SELECT TOP (1) dc.Sk_Cliente
+    FROM dbo.DimCliente dc
+    WHERE dc.Id_Cliente = v.Id_Cliente
+      AND (
+          (v.Fecha >= dc.Fecha_Inicio AND (dc.Fecha_Fin IS NULL OR v.Fecha < dc.Fecha_Fin))
+          OR (
+              dc.Es_Actual = 1
+              AND v.Fecha < (SELECT Fecha_Corte FROM dbo.SCD2_ControlH04 WHERE Id_Control = 1)
+          )
+      )
+    ORDER BY
+        CASE WHEN v.Fecha >= dc.Fecha_Inicio AND (dc.Fecha_Fin IS NULL OR v.Fecha < dc.Fecha_Fin) THEN 0 ELSE 1 END,
+        dc.Fecha_Inicio DESC,
+        dc.Sk_Cliente DESC
+) dc
 INNER JOIN dbo.DimVendedor dv ON v.Id_Usuario = dv.Id_Usuario
 INNER JOIN dbo.DimCondicionPago dcp ON v.Id_Condicion_Pago = dcp.Id_Condicion_Pago
 WHERE ev.Nombre_Estado = 'Confirmada'
@@ -307,8 +377,33 @@ WHERE ev.Nombre_Estado = 'Confirmada'
 GO
 
 -- Hechos: FactVentaProducto
+-- Para ventas anteriores al corte, la version actual es un fallback de compatibilidad; no reconstruye la historia real.
+IF EXISTS (
+    SELECT 1
+    FROM MUNDO_ESCOLAR.dbo.Venta_Producto vp
+    INNER JOIN MUNDO_ESCOLAR.dbo.Venta v ON vp.Id_Venta = v.Id_Venta
+    INNER JOIN MUNDO_ESCOLAR.dbo.Estado_Venta ev ON v.Id_Estado_Venta = ev.Id_Estado_Venta
+    WHERE ev.Nombre_Estado = 'Confirmada'
+      AND NOT EXISTS (
+          SELECT 1
+          FROM dbo.DimProducto dp
+          WHERE dp.Id_Producto = vp.Id_Producto
+            AND (
+                (v.Fecha >= dp.Fecha_Inicio AND (dp.Fecha_Fin IS NULL OR v.Fecha < dp.Fecha_Fin))
+                OR (
+                    v.Fecha < (SELECT Fecha_Corte FROM dbo.SCD2_ControlH04 WHERE Id_Control = 1)
+                    AND dp.Es_Actual = 1
+                )
+            )
+      )
+)
+BEGIN
+    ;THROW 51067, 'Carga DW detenida: no existe version DimProducto valida para una linea de venta confirmada.', 1;
+END
+GO
+
 INSERT INTO dbo.FactVentaProducto (Id_Venta_Producto, Id_Venta, Sk_Fecha, Sk_Producto, Cantidad, Precio_Unitario, Subtotal)
-SELECT 
+SELECT
     vp.Id_Venta_Producto,
     v.Id_Venta,
     YEAR(v.Fecha) * 10000 + MONTH(v.Fecha) * 100 + DAY(v.Fecha) AS Sk_Fecha,
@@ -319,7 +414,22 @@ SELECT
 FROM MUNDO_ESCOLAR.dbo.Venta_Producto vp
 INNER JOIN MUNDO_ESCOLAR.dbo.Venta v ON vp.Id_Venta = v.Id_Venta
 INNER JOIN MUNDO_ESCOLAR.dbo.Estado_Venta ev ON v.Id_Estado_Venta = ev.Id_Estado_Venta
-INNER JOIN dbo.DimProducto dp ON vp.Id_Producto = dp.Id_Producto
+CROSS APPLY (
+    SELECT TOP (1) dp.Sk_Producto
+    FROM dbo.DimProducto dp
+    WHERE dp.Id_Producto = vp.Id_Producto
+      AND (
+          (v.Fecha >= dp.Fecha_Inicio AND (dp.Fecha_Fin IS NULL OR v.Fecha < dp.Fecha_Fin))
+          OR (
+              dp.Es_Actual = 1
+              AND v.Fecha < (SELECT Fecha_Corte FROM dbo.SCD2_ControlH04 WHERE Id_Control = 1)
+          )
+      )
+    ORDER BY
+        CASE WHEN v.Fecha >= dp.Fecha_Inicio AND (dp.Fecha_Fin IS NULL OR v.Fecha < dp.Fecha_Fin) THEN 0 ELSE 1 END,
+        dp.Fecha_Inicio DESC,
+        dp.Sk_Producto DESC
+) dp
 WHERE ev.Nombre_Estado = 'Confirmada'
   AND NOT EXISTS (SELECT 1 FROM dbo.FactVentaProducto fvp WHERE fvp.Id_Venta_Producto = vp.Id_Venta_Producto);
 GO

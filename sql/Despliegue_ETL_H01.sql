@@ -1,4 +1,4 @@
-USE MUNDO_ESCOLAR;
+﻿USE MUNDO_ESCOLAR;
 GO
 
 CREATE OR ALTER PROCEDURE dbo.SP_ETL_CargarDimFecha
@@ -40,22 +40,128 @@ CREATE OR ALTER PROCEDURE dbo.SP_ETL_CargarDimCliente
 AS
 BEGIN
     SET NOCOUNT ON;
-    INSERT INTO DW_MundoEscolar.dbo.DimCliente (Id_Cliente, Tipo_Cliente, Identificacion, Nombre_Completo, Telefono, Direccion, Estado_Operacional, Fecha_Inicio, Es_Actual)
-    SELECT
-        c.Id_Cliente,
-        tc.Nombre,
-        CASE WHEN tc.Nombre = 'Particular' THEN cp.Identificacion ELSE ci.Cedula_Juridica END,
-        CASE WHEN tc.Nombre = 'Particular' THEN RTRIM(LTRIM(CONCAT(cp.Nombre, ' ', cp.Apellido1, ' ', ISNULL(cp.Apellido2, '')))) ELSE ci.Razon_Social END,
-        c.Telefono,
-        c.Direccion,
-        c.Estado,
-        GETDATE(),
-        1
-    FROM Cliente c
-    INNER JOIN Tipo_Cliente tc ON c.Id_Tipo_Cliente = tc.Id_Tipo_Cliente
-    LEFT JOIN Cliente_Particular cp ON c.Id_Cliente = cp.Id_Cliente
-    LEFT JOIN Cliente_Institucional ci ON c.Id_Cliente = ci.Id_Cliente
-    WHERE NOT EXISTS (SELECT 1 FROM DW_MundoEscolar.dbo.DimCliente dc WHERE dc.Id_Cliente = c.Id_Cliente AND dc.Es_Actual = 1);
+    DECLARE @FechaDeteccion DATETIME = GETDATE();
+    DECLARE @FechaCorte DATETIME;
+    SELECT @FechaCorte = Fecha_Corte
+    FROM DW_MundoEscolar.dbo.SCD2_ControlH04
+    WHERE Id_Control = 1;
+
+    IF @FechaCorte IS NULL
+    BEGIN
+        ;THROW 51056, 'ETL DimCliente detenido: no existe una fecha de corte H04 valida.', 1;
+    END;
+
+    IF @FechaDeteccion < @FechaCorte
+    BEGIN
+        ;THROW 51060, 'ETL DimCliente detenido: el reloj del servidor precede la fecha de corte H04.', 1;
+    END;
+
+    DECLARE @OrigenCliente TABLE (
+        Id_Cliente INT PRIMARY KEY,
+        Tipo_Cliente VARCHAR(50) NOT NULL,
+        Identificacion VARCHAR(50) NOT NULL,
+        Nombre_Completo VARCHAR(150) NOT NULL,
+        Telefono VARCHAR(30) NOT NULL,
+        Direccion VARCHAR(200) NOT NULL,
+        Estado_Operacional BIT NOT NULL
+    );
+
+    BEGIN TRY
+        BEGIN TRANSACTION;
+
+        IF EXISTS (
+            SELECT 1
+            FROM Cliente c
+            INNER JOIN Tipo_Cliente tc ON c.Id_Tipo_Cliente = tc.Id_Tipo_Cliente
+            LEFT JOIN Cliente_Particular cp ON c.Id_Cliente = cp.Id_Cliente
+            LEFT JOIN Cliente_Institucional ci ON c.Id_Cliente = ci.Id_Cliente
+            WHERE (tc.Nombre = 'Particular' AND cp.Id_Cliente IS NULL)
+               OR (tc.Nombre <> 'Particular' AND ci.Id_Cliente IS NULL)
+        )
+        BEGIN
+            ;THROW 51050, 'ETL DimCliente detenido: falta el subtipo o identificacion requerido para uno o mas clientes.', 1;
+        END;
+
+        INSERT INTO @OrigenCliente
+        SELECT
+            c.Id_Cliente,
+            tc.Nombre,
+            CASE WHEN tc.Nombre = 'Particular' THEN cp.Identificacion ELSE ci.Cedula_Juridica END,
+            CASE WHEN tc.Nombre = 'Particular' THEN RTRIM(LTRIM(CONCAT(cp.Nombre, ' ', cp.Apellido1, ' ', ISNULL(cp.Apellido2, '')))) ELSE ci.Razon_Social END,
+            c.Telefono,
+            c.Direccion,
+            c.Estado
+        FROM Cliente c
+        INNER JOIN Tipo_Cliente tc ON c.Id_Tipo_Cliente = tc.Id_Tipo_Cliente
+        LEFT JOIN Cliente_Particular cp ON c.Id_Cliente = cp.Id_Cliente
+        LEFT JOIN Cliente_Institucional ci ON c.Id_Cliente = ci.Id_Cliente;
+
+        UPDATE dc
+        SET
+            Telefono = o.Telefono,
+            Direccion = o.Direccion,
+            Estado_Operacional = o.Estado_Operacional
+        FROM DW_MundoEscolar.dbo.DimCliente dc
+        INNER JOIN @OrigenCliente o ON o.Id_Cliente = dc.Id_Cliente
+        WHERE (dc.Telefono <> o.Telefono OR dc.Telefono IS NULL)
+           OR (dc.Direccion <> o.Direccion OR dc.Direccion IS NULL)
+           OR dc.Estado_Operacional <> o.Estado_Operacional;
+
+        IF EXISTS (
+            SELECT 1
+            FROM DW_MundoEscolar.dbo.DimCliente dc
+            INNER JOIN @OrigenCliente o ON o.Id_Cliente = dc.Id_Cliente
+            WHERE dc.Es_Actual = 1
+              AND dc.Fecha_Inicio >= @FechaDeteccion
+              AND (
+                    dc.Tipo_Cliente <> o.Tipo_Cliente
+                 OR dc.Identificacion <> o.Identificacion
+                 OR dc.Nombre_Completo <> o.Nombre_Completo
+              )
+        )
+        BEGIN
+            ;THROW 51061, 'ETL DimCliente detenido: el instante de deteccion no es posterior al inicio de la version actual.', 1;
+        END;
+
+        UPDATE dc
+        SET
+            Fecha_Fin = @FechaDeteccion,
+            Es_Actual = 0
+        FROM DW_MundoEscolar.dbo.DimCliente dc
+        INNER JOIN @OrigenCliente o ON o.Id_Cliente = dc.Id_Cliente
+        WHERE dc.Es_Actual = 1
+          AND (
+                dc.Tipo_Cliente <> o.Tipo_Cliente
+             OR dc.Identificacion <> o.Identificacion
+             OR dc.Nombre_Completo <> o.Nombre_Completo
+          );
+
+        INSERT INTO DW_MundoEscolar.dbo.DimCliente
+            (Id_Cliente, Tipo_Cliente, Identificacion, Nombre_Completo, Telefono, Direccion, Estado_Operacional, Fecha_Inicio, Fecha_Fin, Es_Actual)
+        SELECT
+            o.Id_Cliente,
+            o.Tipo_Cliente,
+            o.Identificacion,
+            o.Nombre_Completo,
+            o.Telefono,
+            o.Direccion,
+            o.Estado_Operacional,
+            @FechaDeteccion,
+            NULL,
+            1
+        FROM @OrigenCliente o
+        WHERE NOT EXISTS (
+            SELECT 1 FROM DW_MundoEscolar.dbo.DimCliente dc
+            WHERE dc.Id_Cliente = o.Id_Cliente AND dc.Es_Actual = 1
+        );
+
+        COMMIT TRANSACTION;
+    END TRY
+    BEGIN CATCH
+        IF XACT_STATE() <> 0
+            ROLLBACK TRANSACTION;
+        THROW;
+    END CATCH;
 
     SELECT COUNT(*) AS TotalDimCliente FROM DW_MundoEscolar.dbo.DimCliente;
 END;
@@ -65,16 +171,108 @@ CREATE OR ALTER PROCEDURE dbo.SP_ETL_CargarDimProducto
 AS
 BEGIN
     SET NOCOUNT ON;
-    INSERT INTO DW_MundoEscolar.dbo.DimProducto (Id_Producto, Nombre_Producto, Categoria, Precio_Venta_Actual, Estado)
-    SELECT
-        p.Id_Producto,
-        p.Nombre,
-        c.Nombre,
-        p.Precio_Venta,
-        p.Estado
-    FROM Producto p
-    INNER JOIN Categoria c ON p.Id_Categoria = c.Id_Categoria
-    WHERE NOT EXISTS (SELECT 1 FROM DW_MundoEscolar.dbo.DimProducto dp WHERE dp.Id_Producto = p.Id_Producto);
+    DECLARE @FechaDeteccion DATETIME = GETDATE();
+    DECLARE @FechaCorte DATETIME;
+    SELECT @FechaCorte = Fecha_Corte
+    FROM DW_MundoEscolar.dbo.SCD2_ControlH04
+    WHERE Id_Control = 1;
+
+    IF @FechaCorte IS NULL
+    BEGIN
+        ;THROW 51057, 'ETL DimProducto detenido: no existe una fecha de corte H04 valida.', 1;
+    END;
+
+    IF @FechaDeteccion < @FechaCorte
+    BEGIN
+        ;THROW 51062, 'ETL DimProducto detenido: el reloj del servidor precede la fecha de corte H04.', 1;
+    END;
+
+    DECLARE @OrigenProducto TABLE (
+        Id_Producto INT PRIMARY KEY,
+        Nombre_Producto VARCHAR(100) NOT NULL,
+        Categoria VARCHAR(50) NOT NULL,
+        Precio_Venta_Actual DECIMAL(12,2) NOT NULL,
+        Estado BIT NOT NULL
+    );
+
+    BEGIN TRY
+        BEGIN TRANSACTION;
+
+        IF EXISTS (
+            SELECT 1
+            FROM Producto p
+            LEFT JOIN Categoria c ON c.Id_Categoria = p.Id_Categoria
+            WHERE c.Id_Categoria IS NULL
+        )
+        BEGIN
+            ;THROW 51051, 'ETL DimProducto detenido: hay productos sin una categoria de origen valida.', 1;
+        END;
+
+        INSERT INTO @OrigenProducto
+        SELECT p.Id_Producto, p.Nombre, c.Nombre, p.Precio_Venta, p.Estado
+        FROM Producto p
+        INNER JOIN Categoria c ON c.Id_Categoria = p.Id_Categoria;
+
+        UPDATE dp
+        SET
+            Precio_Venta_Actual = o.Precio_Venta_Actual,
+            Estado = o.Estado
+        FROM DW_MundoEscolar.dbo.DimProducto dp
+        INNER JOIN @OrigenProducto o ON o.Id_Producto = dp.Id_Producto
+        WHERE dp.Precio_Venta_Actual <> o.Precio_Venta_Actual
+           OR dp.Estado <> o.Estado;
+
+        IF EXISTS (
+            SELECT 1
+            FROM DW_MundoEscolar.dbo.DimProducto dp
+            INNER JOIN @OrigenProducto o ON o.Id_Producto = dp.Id_Producto
+            WHERE dp.Es_Actual = 1
+              AND dp.Fecha_Inicio >= @FechaDeteccion
+              AND (
+                    dp.Nombre_Producto <> o.Nombre_Producto
+                 OR dp.Categoria <> o.Categoria
+              )
+        )
+        BEGIN
+            ;THROW 51063, 'ETL DimProducto detenido: el instante de deteccion no es posterior al inicio de la version actual.', 1;
+        END;
+
+        UPDATE dp
+        SET
+            Fecha_Fin = @FechaDeteccion,
+            Es_Actual = 0
+        FROM DW_MundoEscolar.dbo.DimProducto dp
+        INNER JOIN @OrigenProducto o ON o.Id_Producto = dp.Id_Producto
+        WHERE dp.Es_Actual = 1
+          AND (
+                dp.Nombre_Producto <> o.Nombre_Producto
+             OR dp.Categoria <> o.Categoria
+          );
+
+        INSERT INTO DW_MundoEscolar.dbo.DimProducto
+            (Id_Producto, Nombre_Producto, Categoria, Precio_Venta_Actual, Estado, Fecha_Inicio, Fecha_Fin, Es_Actual)
+        SELECT
+            o.Id_Producto,
+            o.Nombre_Producto,
+            o.Categoria,
+            o.Precio_Venta_Actual,
+            o.Estado,
+            @FechaDeteccion,
+            NULL,
+            1
+        FROM @OrigenProducto o
+        WHERE NOT EXISTS (
+            SELECT 1 FROM DW_MundoEscolar.dbo.DimProducto dp
+            WHERE dp.Id_Producto = o.Id_Producto AND dp.Es_Actual = 1
+        );
+
+        COMMIT TRANSACTION;
+    END TRY
+    BEGIN CATCH
+        IF XACT_STATE() <> 0
+            ROLLBACK TRANSACTION;
+        THROW;
+    END CATCH;
 
     SELECT COUNT(*) AS TotalDimProducto FROM DW_MundoEscolar.dbo.DimProducto;
 END;
@@ -84,6 +282,15 @@ CREATE OR ALTER PROCEDURE dbo.SP_ETL_CargarDimServicio
 AS
 BEGIN
     SET NOCOUNT ON;
+    UPDATE ds
+    SET
+        Precio_Base = s.Precio_Base,
+        Estado = s.Estado
+    FROM DW_MundoEscolar.dbo.DimServicio ds
+    INNER JOIN Servicio s ON s.Id_Servicio = ds.Id_Servicio
+    WHERE ds.Precio_Base <> s.Precio_Base
+       OR ds.Estado <> s.Estado;
+
     INSERT INTO DW_MundoEscolar.dbo.DimServicio (Id_Servicio, Nombre_Servicio, Precio_Base, Estado)
     SELECT
         s.Id_Servicio,
@@ -150,11 +357,46 @@ CREATE OR ALTER PROCEDURE dbo.SP_ETL_CargarFactVentas
 AS
 BEGIN
     SET NOCOUNT ON;
+    DECLARE @FechaCorte DATETIME;
+    SELECT @FechaCorte = Fecha_Corte
+    FROM DW_MundoEscolar.dbo.SCD2_ControlH04
+    WHERE Id_Control = 1;
+
+    IF @FechaCorte IS NULL
+    BEGIN
+        ;THROW 51058, 'ETL FactVentas detenido: no existe una fecha de corte H04 valida.', 1;
+    END;
+
+    -- El fallback pre-corte usa la version disponible; no reconstruye la historia real.
+    IF EXISTS (
+        SELECT 1
+        FROM Venta v
+        INNER JOIN Estado_Venta ev ON v.Id_Estado_Venta = ev.Id_Estado_Venta
+        WHERE ev.Nombre_Estado = 'Confirmada'
+          AND NOT EXISTS (SELECT 1 FROM DW_MundoEscolar.dbo.FactVenta f WHERE f.Id_Venta = v.Id_Venta)
+          AND NOT EXISTS (
+              SELECT 1
+              FROM DW_MundoEscolar.dbo.DimCliente dc
+              WHERE dc.Id_Cliente = v.Id_Cliente
+                AND (
+                    (v.Fecha >= dc.Fecha_Inicio AND (dc.Fecha_Fin IS NULL OR v.Fecha < dc.Fecha_Fin))
+                    OR (
+                        v.Fecha < @FechaCorte
+                        AND
+                        dc.Es_Actual = 1
+                    )
+                )
+          )
+    )
+    BEGIN
+        ;THROW 51052, 'ETL FactVentas detenido: no se encontro una version de cliente valida para una venta confirmada.', 1;
+    END;
+
     INSERT INTO DW_MundoEscolar.dbo.FactVenta (Id_Venta, Sk_Fecha, Sk_Cliente, Sk_Vendedor, Sk_Condicion_Pago, Subtotal, Impuesto, Monto_Total)
     SELECT
         v.Id_Venta,
         YEAR(v.Fecha) * 10000 + MONTH(v.Fecha) * 100 + DAY(v.Fecha) AS Sk_Fecha,
-        dc.Sk_Cliente,
+        clienteVersion.Sk_Cliente,
         dv.Sk_Vendedor,
         dcp.Sk_Condicion_Pago,
         v.Subtotal,
@@ -162,9 +404,25 @@ BEGIN
         v.Monto_Total
     FROM Venta v
     INNER JOIN Estado_Venta ev ON v.Id_Estado_Venta = ev.Id_Estado_Venta
-    INNER JOIN DW_MundoEscolar.dbo.DimCliente dc ON v.Id_Cliente = dc.Id_Cliente AND dc.Es_Actual = 1
     INNER JOIN DW_MundoEscolar.dbo.DimVendedor dv ON v.Id_Usuario = dv.Id_Usuario
     INNER JOIN DW_MundoEscolar.dbo.DimCondicionPago dcp ON v.Id_Condicion_Pago = dcp.Id_Condicion_Pago
+    CROSS APPLY (
+        SELECT TOP (1) dc.Sk_Cliente
+        FROM DW_MundoEscolar.dbo.DimCliente dc
+        WHERE dc.Id_Cliente = v.Id_Cliente
+          AND (
+              (v.Fecha >= dc.Fecha_Inicio AND (dc.Fecha_Fin IS NULL OR v.Fecha < dc.Fecha_Fin))
+              OR (
+                  v.Fecha < @FechaCorte
+                  AND
+                  dc.Es_Actual = 1
+              )
+          )
+        ORDER BY
+            CASE WHEN v.Fecha >= dc.Fecha_Inicio AND (dc.Fecha_Fin IS NULL OR v.Fecha < dc.Fecha_Fin) THEN 0 ELSE 1 END,
+            dc.Fecha_Inicio DESC,
+            dc.Sk_Cliente DESC
+    ) clienteVersion
     WHERE ev.Nombre_Estado = 'Confirmada'
       AND NOT EXISTS (SELECT 1 FROM DW_MundoEscolar.dbo.FactVenta fv WHERE fv.Id_Venta = v.Id_Venta);
 
@@ -176,19 +434,74 @@ CREATE OR ALTER PROCEDURE dbo.SP_ETL_CargarFactVentaProducto
 AS
 BEGIN
     SET NOCOUNT ON;
+    DECLARE @FechaCorte DATETIME;
+    SELECT @FechaCorte = Fecha_Corte
+    FROM DW_MundoEscolar.dbo.SCD2_ControlH04
+    WHERE Id_Control = 1;
+
+    IF @FechaCorte IS NULL
+    BEGIN
+        ;THROW 51059, 'ETL FactVentaProducto detenido: no existe una fecha de corte H04 valida.', 1;
+    END;
+
+    -- El fallback pre-corte usa la version disponible; no reconstruye la historia real.
+    IF EXISTS (
+        SELECT 1
+        FROM Venta_Producto vp
+        INNER JOIN Venta v ON vp.Id_Venta = v.Id_Venta
+        INNER JOIN Estado_Venta ev ON v.Id_Estado_Venta = ev.Id_Estado_Venta
+        WHERE ev.Nombre_Estado = 'Confirmada'
+          AND NOT EXISTS (
+              SELECT 1 FROM DW_MundoEscolar.dbo.FactVentaProducto f
+              WHERE f.Id_Venta_Producto = vp.Id_Venta_Producto
+          )
+          AND NOT EXISTS (
+              SELECT 1
+              FROM DW_MundoEscolar.dbo.DimProducto dp
+              WHERE dp.Id_Producto = vp.Id_Producto
+                AND (
+                    (v.Fecha >= dp.Fecha_Inicio AND (dp.Fecha_Fin IS NULL OR v.Fecha < dp.Fecha_Fin))
+                    OR (
+                        v.Fecha < @FechaCorte
+                        AND
+                        dp.Es_Actual = 1
+                    )
+                )
+          )
+    )
+    BEGIN
+        ;THROW 51053, 'ETL FactVentaProducto detenido: no se encontro una version de producto valida para una venta confirmada.', 1;
+    END;
+
     INSERT INTO DW_MundoEscolar.dbo.FactVentaProducto (Id_Venta_Producto, Id_Venta, Sk_Fecha, Sk_Producto, Cantidad, Precio_Unitario, Subtotal)
     SELECT
         vp.Id_Venta_Producto,
         v.Id_Venta,
         YEAR(v.Fecha) * 10000 + MONTH(v.Fecha) * 100 + DAY(v.Fecha) AS Sk_Fecha,
-        dp.Sk_Producto,
+        productoVersion.Sk_Producto,
         vp.Cantidad,
         vp.Precio_Unitario,
         vp.Subtotal
     FROM Venta_Producto vp
     INNER JOIN Venta v ON vp.Id_Venta = v.Id_Venta
     INNER JOIN Estado_Venta ev ON v.Id_Estado_Venta = ev.Id_Estado_Venta
-    INNER JOIN DW_MundoEscolar.dbo.DimProducto dp ON vp.Id_Producto = dp.Id_Producto
+    CROSS APPLY (
+        SELECT TOP (1) dp.Sk_Producto
+        FROM DW_MundoEscolar.dbo.DimProducto dp
+        WHERE dp.Id_Producto = vp.Id_Producto
+          AND (
+              (v.Fecha >= dp.Fecha_Inicio AND (dp.Fecha_Fin IS NULL OR v.Fecha < dp.Fecha_Fin))
+              OR (
+                  v.Fecha < @FechaCorte
+                  AND
+                  dp.Es_Actual = 1
+              )
+          )
+        ORDER BY
+            CASE WHEN v.Fecha >= dp.Fecha_Inicio AND (dp.Fecha_Fin IS NULL OR v.Fecha < dp.Fecha_Fin) THEN 0 ELSE 1 END,
+            dp.Fecha_Inicio DESC,
+            dp.Sk_Producto DESC
+    ) productoVersion
     WHERE ev.Nombre_Estado = 'Confirmada'
       AND NOT EXISTS (SELECT 1 FROM DW_MundoEscolar.dbo.FactVentaProducto fvp WHERE fvp.Id_Venta_Producto = vp.Id_Venta_Producto);
 
