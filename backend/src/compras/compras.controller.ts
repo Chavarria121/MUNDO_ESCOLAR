@@ -120,4 +120,18 @@ export class ComprasController {
   ) {
     return this.compras.anularCompra(id, dto, u.idUsuario);
   }
+
+  @Get('reabastecimiento/sugerencias')
+  @RequierePermisos(PERMISOS.COMPRAS_REGISTRAR)
+  @ApiOperation({ summary: 'Obtener sugerencias inteligentes de reabastecimiento por stock crítico (Smart Procurement)' })
+  obtenerSugerencias() {
+    return this.compras.obtenerSugerenciasReabastecimiento();
+  }
+
+  @Post('reabastecimiento/generar-ordenes')
+  @RequierePermisos(PERMISOS.COMPRAS_REGISTRAR)
+  @ApiOperation({ summary: 'Generar órdenes de compra sugeridas en estado Pendiente en 1 solo clic' })
+  generarOrdenesSugeridas(@Body() dto: any, @UsuarioActual() u: UsuarioSesion) {
+    return this.compras.generarOrdenesSugeridas(dto, u.idUsuario);
+  }
 }

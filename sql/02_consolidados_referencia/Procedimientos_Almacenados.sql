@@ -3061,29 +3061,101 @@ BEGIN
 END;
 GO
 
--- 81. SP_ETL_CargarDimCliente
+-- 81. SP_ETL_CargarDimCliente (Implementación Rigurosa de SCD Tipo 2)
 CREATE OR ALTER PROCEDURE dbo.SP_ETL_CargarDimCliente
 AS
 BEGIN
     SET NOCOUNT ON;
-    INSERT INTO dw.DimCliente (Id_Cliente, Tipo_Cliente, Identificacion, Nombre_Completo, Telefono, Direccion, Estado_Operacional, Fecha_Inicio, Es_Actual)
-    SELECT 
-        c.Id_Cliente,
-        tc.Nombre,
-        CASE WHEN tc.Nombre = 'Particular' THEN cp.Identificacion ELSE ci.Cedula_Juridica END,
-        CASE WHEN tc.Nombre = 'Particular' THEN RTRIM(LTRIM(CONCAT(cp.Nombre, ' ', cp.Apellido1, ' ', ISNULL(cp.Apellido2, '')))) ELSE ci.Razon_Social END,
-        c.Telefono,
-        c.Direccion,
-        c.Estado,
-        GETDATE(),
-        1
-    FROM Cliente c
-    INNER JOIN Tipo_Cliente tc ON c.Id_Tipo_Cliente = tc.Id_Tipo_Cliente
-    LEFT JOIN Cliente_Particular cp ON c.Id_Cliente = cp.Id_Cliente
-    LEFT JOIN Cliente_Institucional ci ON c.Id_Cliente = ci.Id_Cliente
-    WHERE NOT EXISTS (SELECT 1 FROM dw.DimCliente dc WHERE dc.Id_Cliente = c.Id_Cliente AND dc.Es_Actual = 1);
+    SET XACT_ABORT ON;
 
-    SELECT COUNT(*) AS TotalDimCliente FROM dw.DimCliente;
+    DECLARE @FechaCorte DATETIME = GETDATE();
+
+    BEGIN TRANSACTION;
+
+    -- 1. Expirar versión previa para clientes cuyos atributos hayan cambiado (SCD Tipo 2 Expire)
+    ;WITH FuenteClientes AS (
+        SELECT 
+            c.Id_Cliente,
+            tc.Nombre AS Tipo_Cliente,
+            CASE WHEN tc.Nombre = 'Particular' THEN cp.Identificacion ELSE ci.Cedula_Juridica END AS Identificacion,
+            CASE WHEN tc.Nombre = 'Particular' THEN RTRIM(LTRIM(CONCAT(cp.Nombre, ' ', cp.Apellido1, ' ', ISNULL(cp.Apellido2, '')))) ELSE ci.Razon_Social END AS Nombre_Completo,
+            ISNULL(c.Telefono, 'Sin registrar') AS Telefono,
+            ISNULL(c.Direccion, 'Sin asignar') AS Direccion,
+            c.Estado AS Estado_Operacional
+        FROM dbo.Cliente c
+        INNER JOIN dbo.Tipo_Cliente tc ON c.Id_Tipo_Cliente = tc.Id_Tipo_Cliente
+        LEFT JOIN dbo.Cliente_Particular cp ON c.Id_Cliente = cp.Id_Cliente
+        LEFT JOIN dbo.Cliente_Institucional ci ON c.Id_Cliente = ci.Id_Cliente
+    )
+    UPDATE dc
+    SET 
+        dc.Fecha_Fin = @FechaCorte,
+        dc.Es_Actual = 0
+    FROM dw.DimCliente dc
+    INNER JOIN FuenteClientes fc ON dc.Id_Cliente = fc.Id_Cliente
+    WHERE dc.Es_Actual = 1
+      AND (
+          ISNULL(dc.Tipo_Cliente, '') <> ISNULL(fc.Tipo_Cliente, '')
+          OR ISNULL(dc.Identificacion, '') <> ISNULL(fc.Identificacion, '')
+          OR ISNULL(dc.Nombre_Completo, '') <> ISNULL(fc.Nombre_Completo, '')
+          OR ISNULL(dc.Telefono, '') <> ISNULL(fc.Telefono, '')
+          OR ISNULL(dc.Direccion, '') <> ISNULL(fc.Direccion, '')
+          OR ISNULL(dc.Estado_Operacional, -1) <> ISNULL(fc.Estado_Operacional, -1)
+      );
+
+    -- 2. Insertar nueva versión vigente (SCD Tipo 2 Insert)
+    ;WITH FuenteClientes AS (
+        SELECT 
+            c.Id_Cliente,
+            tc.Nombre AS Tipo_Cliente,
+            CASE WHEN tc.Nombre = 'Particular' THEN cp.Identificacion ELSE ci.Cedula_Juridica END AS Identificacion,
+            CASE WHEN tc.Nombre = 'Particular' THEN RTRIM(LTRIM(CONCAT(cp.Nombre, ' ', cp.Apellido1, ' ', ISNULL(cp.Apellido2, '')))) ELSE ci.Razon_Social END AS Nombre_Completo,
+            ISNULL(c.Telefono, 'Sin registrar') AS Telefono,
+            ISNULL(c.Direccion, 'Sin asignar') AS Direccion,
+            c.Estado AS Estado_Operacional
+        FROM dbo.Cliente c
+        INNER JOIN dbo.Tipo_Cliente tc ON c.Id_Tipo_Cliente = tc.Id_Tipo_Cliente
+        LEFT JOIN dbo.Cliente_Particular cp ON c.Id_Cliente = cp.Id_Cliente
+        LEFT JOIN dbo.Cliente_Institucional ci ON c.Id_Cliente = ci.Id_Cliente
+    )
+    INSERT INTO dw.DimCliente (
+        Id_Cliente, 
+        Tipo_Cliente, 
+        Identificacion, 
+        Nombre_Completo, 
+        Telefono, 
+        Direccion, 
+        Estado_Operacional, 
+        Fecha_Inicio, 
+        Fecha_Fin, 
+        Es_Actual
+    )
+    SELECT 
+        fc.Id_Cliente,
+        fc.Tipo_Cliente,
+        fc.Identificacion,
+        fc.Nombre_Completo,
+        fc.Telefono,
+        fc.Direccion,
+        fc.Estado_Operacional,
+        @FechaCorte,
+        NULL,
+        1
+    FROM FuenteClientes fc
+    WHERE NOT EXISTS (
+        SELECT 1 
+        FROM dw.DimCliente dc 
+        WHERE dc.Id_Cliente = fc.Id_Cliente 
+          AND dc.Es_Actual = 1
+    );
+
+    COMMIT TRANSACTION;
+
+    SELECT 
+        COUNT(*) AS TotalDimCliente,
+        SUM(CASE WHEN Es_Actual = 1 THEN 1 ELSE 0 END) AS ClientesActivos,
+        SUM(CASE WHEN Es_Actual = 0 THEN 1 ELSE 0 END) AS VersionesHistoricas
+    FROM dw.DimCliente;
 END;
 GO
 
@@ -3297,4 +3369,180 @@ END;
 GO
 
 PRINT '91 Procedimientos Almacenados instalados exitosamente en MUNDO_ESCOLAR.';
+GO
+
+-- =====================================================================
+-- 92. SP_ObtenerSugerenciasReabastecimiento (Propuesta 1 - Smart Procurement)
+-- =====================================================================
+CREATE OR ALTER PROCEDURE dbo.SP_ObtenerSugerenciasReabastecimiento
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    SELECT 
+        prv.Id_Proveedor,
+        prv.Nombre_O_RazonSocial AS Nombre_Proveedor,
+        prv.Tipo_Proveedor,
+        prv.Telefono_Contacto,
+        prv.Correo_Contacto,
+        p.Id_Producto,
+        p.Nombre AS Nombre_Producto,
+        c.Nombre AS Categoria,
+        p.Stock_Actual,
+        p.Punto_Reorden,
+        CASE 
+            WHEN ((p.Punto_Reorden * 2) - p.Stock_Actual) > 0 THEN ((p.Punto_Reorden * 2) - p.Stock_Actual)
+            ELSE p.Punto_Reorden
+        END AS Cantidad_Sugerida,
+        pp.Precio_Compra AS Costo_Unitario,
+        (
+            CASE 
+                WHEN ((p.Punto_Reorden * 2) - p.Stock_Actual) > 0 THEN ((p.Punto_Reorden * 2) - p.Stock_Actual)
+                ELSE p.Punto_Reorden
+            END * pp.Precio_Compra
+        ) AS Inversion_Estimada,
+        pp.EsPrincipal
+    FROM dbo.Producto p
+    INNER JOIN dbo.Categoria c ON p.Id_Categoria = c.Id_Categoria
+    INNER JOIN dbo.Producto_Proveedor pp ON p.Id_Producto = pp.Id_Producto AND pp.EsPrincipal = 1 AND pp.Estado = 1
+    INNER JOIN dbo.VW_ProveedoresActivos prv ON pp.Id_Proveedor = prv.Id_Proveedor
+    WHERE p.Stock_Actual <= p.Punto_Reorden
+      AND p.Estado = 1
+    ORDER BY prv.Nombre_O_RazonSocial, p.Nombre;
+END;
+GO
+
+
+-- =========================================================================
+-- FASE 5: EXPANSIÓN DATA WAREHOUSE & BUSINESS INTELLIGENCE
+-- =========================================================================
+
+-- 93. SP_ETL_CargarDimProveedor
+CREATE OR ALTER PROCEDURE dbo.SP_ETL_CargarDimProveedor
+AS
+BEGIN
+    SET NOCOUNT ON;
+    INSERT INTO dw.DimProveedor (
+        Id_Proveedor, Nombre_Empresa, Tipo_Proveedor, Numero_Identificacion,
+        Nombre_Contacto, Telefono_Contacto, Correo_Contacto, Direccion,
+        Lead_Time_Pactado_Dias, Estado
+    )
+    SELECT 
+        v.Id_Proveedor,
+        v.Nombre_O_RazonSocial,
+        v.Tipo_Proveedor,
+        v.Numero_Identificacion,
+        ISNULL(v.Nombre_Contacto, v.Nombre + ' ' + ISNULL(v.Apellido1, '')),
+        ISNULL(v.Telefono_Contacto, v.Telefono),
+        ISNULL(v.Correo_Contacto, v.Correo),
+        v.Direccion,
+        CASE 
+            WHEN v.Id_Proveedor = 2 THEN 7 -- Distribuidora Escolar del Valle (Pactado 7 días)
+            ELSE 3                         -- Papelera Nacional / Carlos Mora (Pactado 3 días)
+        END AS Lead_Time_Pactado_Dias,
+        CASE WHEN v.Estado = 1 THEN 'Activo' ELSE 'Inactivo' END
+    FROM dbo.VW_ProveedoresActivos v
+    WHERE NOT EXISTS (SELECT 1 FROM dw.DimProveedor dp WHERE dp.Id_Proveedor = v.Id_Proveedor);
+
+    SELECT COUNT(*) AS TotalDimProveedor FROM dw.DimProveedor;
+END;
+GO
+
+-- 94. SP_ETL_CargarFactCompras
+CREATE OR ALTER PROCEDURE dbo.SP_ETL_CargarFactCompras
+AS
+BEGIN
+    SET NOCOUNT ON;
+    INSERT INTO dw.FactCompras (
+        Id_Compra, Id_Compra_Producto, Sk_Fecha_Compra, Sk_Fecha_Recepcion,
+        Sk_Proveedor, Sk_Producto, Cantidad_Comprada, Costo_Unitario, Monto_Total_Compra,
+        Fecha_Orden, Fecha_Prometida, Fecha_Recepcion_Real, Dias_Tardanza_Entrega, Cumplio_A_Tiempo
+    )
+    SELECT 
+        c.Id_Compra,
+        cp.Id_Compra_Producto,
+        YEAR(c.Fecha_Compra) * 10000 + MONTH(c.Fecha_Compra) * 100 + DAY(c.Fecha_Compra) AS Sk_Fecha_Compra,
+        YEAR(mi.Fecha) * 10000 + MONTH(mi.Fecha) * 100 + DAY(mi.Fecha) AS Sk_Fecha_Recepcion,
+        dprov.Sk_Proveedor,
+        dp.Sk_Producto,
+        cp.Cantidad,
+        cp.Costo_Unitario,
+        cp.Subtotal,
+        c.Fecha_Compra AS Fecha_Orden,
+        DATEADD(DAY, dprov.Lead_Time_Pactado_Dias, CAST(c.Fecha_Compra AS DATE)) AS Fecha_Prometida,
+        mi.Fecha AS Fecha_Recepcion_Real,
+        DATEDIFF(DAY, DATEADD(DAY, dprov.Lead_Time_Pactado_Dias, CAST(c.Fecha_Compra AS DATE)), CAST(mi.Fecha AS DATE)) AS Dias_Tardanza_Entrega,
+        CASE 
+            WHEN CAST(mi.Fecha AS DATE) <= DATEADD(DAY, dprov.Lead_Time_Pactado_Dias, CAST(c.Fecha_Compra AS DATE)) THEN 1 
+            ELSE 0 
+        END AS Cumplio_A_Tiempo
+    FROM dbo.Compra c
+    INNER JOIN dbo.Compra_Producto cp ON c.Id_Compra = cp.Id_Compra
+    INNER JOIN dbo.Estado_Compra ec ON c.Id_Estado_Compra = ec.Id_Estado_Compra
+    INNER JOIN dw.DimProveedor dprov ON c.Id_Proveedor = dprov.Id_Proveedor
+    INNER JOIN dw.DimProducto dp ON cp.Id_Producto = dp.Id_Producto
+    CROSS APPLY (
+        SELECT TOP 1 Fecha 
+        FROM dbo.Movimiento_Inventario mi 
+        WHERE mi.Id_Producto = cp.Id_Producto 
+          AND mi.Id_Tipo_Movimiento = 1 
+          AND mi.Fecha >= c.Fecha_Compra
+        ORDER BY mi.Fecha ASC
+    ) mi
+    WHERE ec.Nombre_Estado = 'Recibida'
+      AND NOT EXISTS (SELECT 1 FROM dw.FactCompras fc WHERE fc.Id_Compra_Producto = cp.Id_Compra_Producto);
+
+    SELECT COUNT(*) AS TotalFactCompras FROM dw.FactCompras;
+END;
+GO
+
+-- 95. SP_ETL_CargarFactInventario
+CREATE OR ALTER PROCEDURE dbo.SP_ETL_CargarFactInventario
+    @FechaCorte DATE = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    IF @FechaCorte IS NULL 
+        SET @FechaCorte = CAST(GETDATE() AS DATE);
+
+    DECLARE @SkFecha INT = YEAR(@FechaCorte) * 10000 + MONTH(@FechaCorte) * 100 + DAY(@FechaCorte);
+
+    DELETE FROM dw.FactInventario WHERE Sk_Fecha = @SkFecha;
+
+    INSERT INTO dw.FactInventario (
+        Sk_Fecha, Sk_Producto, Stock_Final, Costo_Promedio, Valor_Total_Inventario,
+        Punto_Reorden, Alerta_Reorden, Dias_Sin_Movimiento, Indice_Rotacion
+    )
+    SELECT 
+        @SkFecha AS Sk_Fecha,
+        dp.Sk_Producto,
+        p.Stock_Actual AS Stock_Final,
+        ISNULL(pp.Precio_Compra, 0.00) AS Costo_Promedio,
+        ROUND(p.Stock_Actual * ISNULL(pp.Precio_Compra, 0.00), 2) AS Valor_Total_Inventario,
+        p.Punto_Reorden,
+        CASE WHEN p.Stock_Actual <= p.Punto_Reorden THEN 1 ELSE 0 END AS Alerta_Reorden,
+        ISNULL(DATEDIFF(DAY, ultVenta.UltimaFecha, @FechaCorte), 30) AS Dias_Sin_Movimiento,
+        CASE 
+            WHEN p.Stock_Actual > 0 
+            THEN ROUND(CAST(ISNULL(ventasTot.CantidadVendida, 0) AS DECIMAL(10,2)) / CAST(p.Stock_Actual AS DECIMAL(10,2)), 2)
+            ELSE CAST(ISNULL(ventasTot.CantidadVendida, 0) AS DECIMAL(10,2))
+        END AS Indice_Rotacion
+    FROM dbo.Producto p
+    INNER JOIN dw.DimProducto dp ON p.Id_Producto = dp.Id_Producto
+    LEFT JOIN dbo.Producto_Proveedor pp ON p.Id_Producto = pp.Id_Producto AND pp.EsPrincipal = 1
+    OUTER APPLY (
+        SELECT MAX(v.Fecha) AS UltimaFecha
+        FROM dbo.Venta v
+        INNER JOIN dbo.Venta_Producto vp ON v.Id_Venta = vp.Id_Venta
+        WHERE vp.Id_Producto = p.Id_Producto
+    ) ultVenta
+    OUTER APPLY (
+        SELECT SUM(vp.Cantidad) AS CantidadVendida
+        FROM dbo.Venta_Producto vp
+        WHERE vp.Id_Producto = p.Id_Producto
+    ) ventasTot
+    WHERE p.Estado = 1;
+
+    SELECT COUNT(*) AS TotalSnapshotsInventario FROM dw.FactInventario WHERE Sk_Fecha = @SkFecha;
+END;
 GO

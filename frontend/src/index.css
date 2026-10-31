@@ -199,3 +199,41 @@
     padding: 5px 8px !important;
   }
 }
+
+/* Micro-animaciones para el Carrito y POS (Fade-In puro en su lugar con iluminación suave) */
+@keyframes cartFadeInHighlight {
+  0% {
+    opacity: 0;
+    background-color: #ecfdf5;
+    border-color: #6ee7b7;
+  }
+  30% {
+    opacity: 1;
+    background-color: #ecfdf5;
+    border-color: #6ee7b7;
+  }
+  100% {
+    opacity: 1;
+    background-color: #f8fafc;
+    border-color: #dfd5c4;
+  }
+}
+
+@keyframes cartFlashPulse {
+  0% {
+    background-color: #ecfdf5;
+    border-color: #10b981;
+  }
+  100% {
+    background-color: #f8fafc;
+    border-color: #dfd5c4;
+  }
+}
+
+.animate-cart-bounce {
+  animation: cartFadeInHighlight 0.32s ease-out both;
+}
+
+.animate-cart-flash {
+  animation: cartFlashPulse 0.32s ease-out both;
+}

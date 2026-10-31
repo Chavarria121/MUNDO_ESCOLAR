@@ -117,4 +117,37 @@ export class ComprasService {
     );
     return r.filas[0] ?? { Mensaje: 'Compra anulada con éxito.' };
   }
+
+  async obtenerSugerenciasReabastecimiento() {
+    return this.sql.consultarSP('SP_ObtenerSugerenciasReabastecimiento', {});
+  }
+
+  async generarOrdenesSugeridas(
+    dto: { ordenes: Array<{ idProveedor: number; items: Array<{ idProducto: number; cantidad: number; costoUnitario?: number }> }> },
+    idUsuario: number,
+  ) {
+    const ordenesCreadas: any[] = [];
+    for (const ord of (dto.ordenes || [])) {
+      if (!ord.items?.length) continue;
+      const resCompra = await this.crearCompra({ idProveedor: ord.idProveedor }, idUsuario);
+      const idCompra = resCompra.Id_Compra;
+      for (const it of ord.items) {
+        await this.agregarProducto(
+          idCompra,
+          {
+            idProducto: it.idProducto,
+            cantidad: it.cantidad,
+            costoUnitario: it.costoUnitario,
+          },
+          idUsuario,
+        );
+      }
+      ordenesCreadas.push({ idCompra, idProveedor: ord.idProveedor, totalItems: ord.items.length });
+    }
+    return {
+      mensaje: 'Órdenes de compra generadas exitosamente en estado Pendiente',
+      totalOrdenes: ordenesCreadas.length,
+      ordenes: ordenesCreadas,
+    };
+  }
 }

@@ -15,14 +15,18 @@ import {
   Receipt,
   Printer,
   RefreshCw,
-  Sparkles,
   User,
   Layers,
   ArrowRight,
   X,
   Clock,
-  ChevronDown
+  ChevronDown,
+  Copy,
+  Check,
+  Keyboard
 } from 'lucide-react';
+import QrFiscal from '../components/QrFiscal';
+import { generarClaveHacienda50, formatearClaveHacienda, generarQrFiscalUrl, generarMensajeWhatsAppFactura } from '../utils/haciendaUtils';
 import api from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
@@ -30,6 +34,18 @@ import { useToast } from '../context/ToastContext';
 export default function PosPage({ onNavigateToFacturacion }) {
   const { user } = useAuth();
   const { showToast } = useToast();
+
+  // Referencias y estados de atajos de teclado
+  const inputBusquedaRef = useRef(null);
+  const [claveCopiada, setClaveCopiada] = useState(false);
+
+  const copiarClaveHacienda = (clave) => {
+    if (!clave) return;
+    navigator.clipboard.writeText(clave);
+    setClaveCopiada(true);
+    showToast('Clave numérica de 50 dígitos copiada al portapapeles', 'success');
+    setTimeout(() => setClaveCopiada(false), 2500);
+  };
 
   
   
@@ -75,6 +91,8 @@ export default function PosPage({ onNavigateToFacturacion }) {
       });
   }, [clienteSeleccionado]);
   const [itemsCarrito, setItemsCarrito] = useState([]);
+  const [ultimoItemModificadoId, setUltimoItemModificadoId] = useState(null);
+  const [badgeKey, setBadgeKey] = useState(0);
 
   // Modales
   const [modalCobroAbierto, setModalCobroAbierto] = useState(false);
@@ -299,6 +317,7 @@ export default function PosPage({ onNavigateToFacturacion }) {
   }, [productos]);
 
   // Filtrado de items para la cuadrícula
+
   const itemsFiltrados = useMemo(() => {
     const term = busqueda.toLowerCase().trim();
 
@@ -358,6 +377,11 @@ export default function PosPage({ onNavigateToFacturacion }) {
       return;
     }
 
+    const itemId = `${item.tipo}-${item.id}`;
+    setUltimoItemModificadoId(itemId);
+    setBadgeKey((prev) => prev + 1);
+    setTimeout(() => setUltimoItemModificadoId(null), 550);
+
     setItemsCarrito((prev) => {
       const index = prev.findIndex((i) => i.tipo === item.tipo && i.id === item.id);
       if (index >= 0) {
@@ -379,6 +403,11 @@ export default function PosPage({ onNavigateToFacturacion }) {
   const modificarCantidad = (index, delta) => {
     setItemsCarrito((prev) => {
       const item = prev[index];
+      if (!item) return prev;
+      const itemId = `${item.tipo}-${item.id}`;
+      setUltimoItemModificadoId(itemId);
+      setBadgeKey((k) => k + 1);
+      setTimeout(() => setUltimoItemModificadoId(null), 550);
       const nuevaCantidad = item.cantidad + delta;
       if (nuevaCantidad <= 0) {
         return prev.filter((_, i) => i !== index);
@@ -500,15 +529,24 @@ export default function PosPage({ onNavigateToFacturacion }) {
       }
 
       // Guardar resultado para comprobante fiscal
+      const fechaActual = new Date();
+      const claveHacienda = generarClaveHacienda50({
+        idFactura: idFacturaGenerada,
+        fecha: fechaActual,
+        cedulaEmisor: '003101899540',
+        tipoComprobante: '04', // Tiquete Electrónico DGT Costa Rica
+      });
       setResultadoVenta({
         idVenta,
         idFactura: idFacturaGenerada,
         numeroFactura: `FAC-${idFacturaGenerada.toString().padStart(8, '0')}`,
+        claveHacienda,
+        qrFiscalUrl: generarQrFiscalUrl(claveHacienda),
         cliente: clienteSeleccionado.Nombre_O_RazonSocial,
         tipoCliente: clienteSeleccionado.Tipo_Cliente,
         identificacion: clienteSeleccionado.Numero_Identificacion,
         vendedor: user?.nombreUsuario || 'Cajero',
-        fecha: new Date(),
+        fecha: fechaActual,
         condicionPago: condicionesPago.find((c) => c.Id_Condicion_Pago === condicionSeleccionada)?.Nombre || (esVentaCredito ? 'Crédito' : 'Contado'),
         metodoPago: esVentaCredito
           ? `Crédito (${condicionesPago.find((c) => c.Id_Condicion_Pago === condicionSeleccionada)?.Nombre || 'Crédito'})`
@@ -537,6 +575,34 @@ export default function PosPage({ onNavigateToFacturacion }) {
       setProcesandoVenta(false);
     }
   };
+
+// Atajos de teclado profesionales para cajero (F2, F4, /, Esc)
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      const isInput = ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName);
+
+      if (e.key === 'F2') {
+        e.preventDefault();
+        if (itemsCarrito.length > 0 && !modalCobroAbierto && !resultadoVenta) {
+          iniciarCobro();
+        }
+      } else if (e.key === 'Escape') {
+        if (modalCobroAbierto) {
+          e.preventDefault();
+          setModalCobroAbierto(false);
+        } else if (resultadoVenta) {
+          e.preventDefault();
+          setResultadoVenta(null);
+        }
+      } else if (e.key === 'F4' || (e.key === '/' && !isInput)) {
+        e.preventDefault();
+        inputBusquedaRef.current?.focus();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [itemsCarrito, modalCobroAbierto, resultadoVenta]);
 
   return (
     <div className="space-y-3">
@@ -682,7 +748,7 @@ export default function PosPage({ onNavigateToFacturacion }) {
                     className={`bg-white rounded-xl border p-3.5 shadow-sm transition-all flex flex-col justify-between group ${
                       esAgotado
                         ? 'border-[#DFD5C4] opacity-60 bg-slate-50/50'
-                        : 'border-[#DFD5C4] hover:border-blue-400 hover:shadow-md cursor-pointer'
+                        : 'border-[#DFD5C4] hover:border-[#C05A3E] hover:shadow-md cursor-pointer active:scale-95 transition-all duration-100'
                     }`}
                     onClick={() => !esAgotado && agregarAlCarrito(item)}
                   >
@@ -764,7 +830,10 @@ export default function PosPage({ onNavigateToFacturacion }) {
                     Ticket de Venta Fiscal
                   </span>
                 </div>
-                <span className="text-xs bg-blue-500/20 text-[#DFD5C4] border border-[#2D5E46]/30 px-2 py-0.5 rounded-full font-semibold">
+                <span
+                  key={badgeKey}
+                  className="text-xs bg-[#2D5E46]/40 text-[#DFD5C4] border border-[#2D5E46]/60 px-2.5 py-0.5 rounded-full font-bold "
+                >
                   {itemsCarrito.reduce((acc, i) => acc + i.cantidad, 0)} items
                 </span>
               </div>
@@ -1034,10 +1103,17 @@ export default function PosPage({ onNavigateToFacturacion }) {
               ) : (
                 itemsCarrito.map((item, index) => {
                   const subtotalLinea = item.precio * item.cantidad;
+                  const itemId = `${item.tipo}-${item.id}`;
+                  const esReciente = ultimoItemModificadoId === itemId;
+
                   return (
                     <div
-                      key={`cart-${item.tipo}-${item.id}`}
-                      className="bg-slate-50 border border-[#DFD5C4] rounded-xl p-2.5 flex items-center justify-between gap-2"
+                      key={`cart-${itemId}`}
+                      className={`animate-cart-bounce rounded-xl p-2.5 flex items-center justify-between gap-2 transition-all duration-200 ${
+                        esReciente
+                          ? 'animate-cart-flash bg-emerald-50/80 border-2 border-emerald-500 shadow-md'
+                          : 'bg-slate-50 border border-[#DFD5C4] hover:border-slate-300'
+                      }`}
                     >
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-1.5">
@@ -1050,23 +1126,29 @@ export default function PosPage({ onNavigateToFacturacion }) {
                           </span>
                           <p className="text-xs font-bold text-slate-800 truncate">{item.nombre}</p>
                         </div>
-                        <p className="text-[11px] text-[#5C3622] mt-0.5">
+                        <p className="text-[11px] text-[#5C3622] mt-0.5 font-medium">
                           ₡{item.precio.toLocaleString('es-CR')} c/u
                         </p>
                       </div>
 
-                      {/* Controles de Cantidad */}
-                      <div className="flex items-center gap-1.5 bg-white border border-[#DFD5C4] rounded-lg p-0.5">
+                      {/* Controles de Cantidad con Feedback */}
+                      <div className="flex items-center gap-1.5 bg-white border border-[#DFD5C4] rounded-lg p-0.5 shadow-xs">
                         <button
+                          type="button"
                           onClick={() => modificarCantidad(index, -1)}
-                          className="w-6 h-6 flex items-center justify-center text-[#5C3622] hover:bg-slate-100 rounded"
+                          className="w-6 h-6 flex items-center justify-center text-[#5C3622] hover:bg-slate-100 active:scale-90 rounded transition"
                         >
                           <Minus className="w-3 h-3" />
                         </button>
-                        <span className="w-6 text-center text-xs font-bold text-slate-800">{item.cantidad}</span>
+                        <span className={`w-6 text-center text-xs font-bold transition-all duration-200 ${
+                          esReciente ? 'text-emerald-700 font-black' : 'text-slate-800'
+                        }`}>
+                          {item.cantidad}
+                        </span>
                         <button
+                          type="button"
                           onClick={() => modificarCantidad(index, 1)}
-                          className="w-6 h-6 flex items-center justify-center text-[#5C3622] hover:bg-slate-100 rounded"
+                          className="w-6 h-6 flex items-center justify-center text-[#5C3622] hover:bg-slate-100 active:scale-90 rounded transition"
                         >
                           <Plus className="w-3 h-3" />
                         </button>
@@ -1081,8 +1163,9 @@ export default function PosPage({ onNavigateToFacturacion }) {
 
                       {/* Botón Eliminar */}
                       <button
+                        type="button"
                         onClick={() => eliminarItem(index)}
-                        className="p-1 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded transition"
+                        className="p-1 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded transition active:scale-90"
                         title="Quitar del ticket"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
@@ -1134,6 +1217,7 @@ export default function PosPage({ onNavigateToFacturacion }) {
                 >
                   <DollarSign className="w-4 h-4" />
                   <span>Cobrar & Facturar</span>
+                  <span className="hidden sm:inline-block text-[9.5px] bg-emerald-800/60 px-1.5 py-0.5 rounded font-mono border border-emerald-400/30">F2</span>
                 </button>
               </div>
             </div>
@@ -1385,46 +1469,73 @@ export default function PosPage({ onNavigateToFacturacion }) {
             </div>
 
             {/* Formato Ticket Fiscal (Imprimible Limpio) */}
-            <div id="ticket-fiscal-imprimible" className="p-6 space-y-4 font-mono text-xs text-slate-700 bg-slate-50 border-b border-[#DFD5C4]">
-              <div className="text-center space-y-0.5 border-b border-dashed border-slate-300 pb-3">
-                <p className="font-bold text-sm text-[#132B20]">LIBRERÍA Y PAPELERÍA MUNDO ESCOLAR</p>
-                <p className="text-[11px] text-[#5C3622]">Cédula Jurídica: 3-101-998877</p>
-                <p className="text-[11px] text-[#5C3622]">Liberia, Guanacaste, CR • Tel: 2666-0000</p>
-                <p className="text-[10px] text-blue-700 font-bold mt-1">
-                  RESOLUCIÓN DGT-R-48-2016 TRIBUTACIÓN DIRECTA
+            <div id="ticket-fiscal-imprimible" className="p-5 space-y-3 font-mono text-xs text-slate-700 bg-slate-50 border-b border-[#DFD5C4]">
+              {/* Encabezado Fiscal Oficial Costa Rica */}
+              <div className="text-center space-y-1 border-b border-dashed border-slate-300 pb-3">
+                <p className="font-black text-sm text-[#132B20] tracking-wide">LIBRERÍA Y PAPELERÍA MUNDO ESCOLAR S.A.</p>
+                <p className="text-[11px] text-slate-600 font-semibold">Cédula Jurídica: 3-101-899540</p>
+                <p className="text-[10.5px] text-slate-500">Liberia, Guanacaste, Costa Rica &bull; Tel: +(506) 2666-0000</p>
+                <div className="inline-block bg-emerald-50 text-emerald-800 border border-emerald-300 px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider mt-1">
+                  TIQUETE ELECTRÓNICO OFICIAL &bull; DGT COSTA RICA
+                </div>
+                <p className="text-[9px] text-slate-400">
+                  Resolución DGT-R-033-2019 / DGT-R-48-2016
                 </p>
               </div>
 
+              {/* Clave Numérica de 50 Dígitos */}
+              <div className="bg-white border border-slate-200 p-2.5 rounded-xl shadow-xs space-y-1">
+                <div className="flex items-center justify-between text-[9.5px] text-slate-600 font-bold">
+                  <span>CLAVE NUMÉRICA TRIBUTARIA (50 DÍGITOS):</span>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => copiarClaveHacienda(resultadoVenta.claveHacienda)}
+                      className="inline-flex items-center gap-1 text-[8.5px] font-bold text-[#C05A3E] hover:text-[#AA4C33] bg-[#FAF7F0] border border-[#DFD5C4] px-1.5 py-0.5 rounded transition shadow-xs cursor-pointer active:scale-95"
+                      title="Copiar clave numérica completa de 50 dígitos"
+                    >
+                      {claveCopiada ? <Check className="w-2.5 h-2.5 text-emerald-600" /> : <Copy className="w-2.5 h-2.5" />}
+                      <span>{claveCopiada ? '¡Copiado!' : 'Copiar'}</span>
+                    </button>
+                    <span className="text-[8.5px] text-emerald-700 bg-emerald-100 font-bold px-1.5 py-0.2 rounded">DGT-CR</span>
+                  </div>
+                </div>
+                <p className="font-mono text-[9px] text-slate-900 leading-tight break-all font-semibold select-all bg-slate-50 p-1.5 rounded border border-slate-200">
+                  {formatearClaveHacienda(resultadoVenta.claveHacienda)}
+                </p>
+              </div>
+
+              {/* Metadatos de la Venta */}
               <div className="space-y-1 text-[11px]">
                 <div className="flex justify-between">
-                  <span className="text-[#5C3622]">Factura:</span>
+                  <span className="text-slate-500">Comprobante Fiscal:</span>
                   <span className="font-bold text-[#132B20]">{resultadoVenta.numeroFactura}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-[#5C3622]">Orden Venta:</span>
+                  <span className="text-slate-500">Orden de Venta:</span>
                   <span>#{resultadoVenta.idVenta}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-[#5C3622]">Fecha:</span>
-                  <span>{resultadoVenta.fecha.toLocaleString('es-CR')}</span>
+                  <span className="text-slate-500">Fecha y Hora:</span>
+                  <span>{new Date(resultadoVenta.fecha).toLocaleString('es-CR')}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-[#5C3622]">Cliente:</span>
-                  <span className="font-bold text-[#132B20] truncate max-w-[180px]">
+                  <span className="text-slate-500">Cliente / Razón Social:</span>
+                  <span className="font-bold text-[#132B20] truncate max-w-[190px]">
                     {resultadoVenta.cliente}
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-[#5C3622]">Identificación:</span>
-                  <span>{resultadoVenta.identificacion}</span>
+                  <span className="text-slate-500">Identificación:</span>
+                  <span>{resultadoVenta.identificacion || 'Consumidor Final'}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-[#5C3622]">Cajero:</span>
+                  <span className="text-slate-500">Cajero Autorizado:</span>
                   <span>{resultadoVenta.vendedor}</span>
                 </div>
               </div>
 
-              {/* Líneas de detalle */}
+              {/* Líneas de Detalle */}
               <div className="border-t border-b border-dashed border-slate-300 py-2 space-y-1">
                 {resultadoVenta.items.map((it, idx) => (
                   <div key={idx} className="flex justify-between text-[11px]">
@@ -1436,19 +1547,19 @@ export default function PosPage({ onNavigateToFacturacion }) {
                 ))}
               </div>
 
-              {/* Totales */}
+              {/* Totales e Impuestos */}
               <div className="space-y-1 text-[11px]">
                 <div className="flex justify-between">
-                  <span>Subtotal:</span>
+                  <span>Subtotal Neto:</span>
                   <span>₡{resultadoVenta.subtotal.toLocaleString('es-CR')}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span>IVA 13%:</span>
+                  <span>IVA 13% (General Costa Rica):</span>
                   <span>₡{resultadoVenta.iva.toLocaleString('es-CR')}</span>
                 </div>
-                <div className="flex justify-between text-xs font-black text-[#132B20] pt-1 border-t border-slate-300">
+                <div className="flex justify-between text-xs font-black text-[#132B20] pt-1.5 border-t border-slate-300">
                   <span>TOTAL A PAGAR:</span>
-                  <span>₡{resultadoVenta.total.toLocaleString('es-CR')}</span>
+                  <span className="text-emerald-700 text-sm">₡{resultadoVenta.total.toLocaleString('es-CR')}</span>
                 </div>
                 <div className="flex justify-between text-slate-600 pt-1">
                   <span>Método de Pago:</span>
@@ -1457,7 +1568,7 @@ export default function PosPage({ onNavigateToFacturacion }) {
                 {resultadoVenta.metodoPago === 'Efectivo' && (
                   <>
                     <div className="flex justify-between text-slate-600">
-                      <span>Entregado:</span>
+                      <span>Monto Entregado:</span>
                       <span>₡{resultadoVenta.montoEntregado.toLocaleString('es-CR')}</span>
                     </div>
                     <div className="flex justify-between font-bold text-emerald-800">
@@ -1468,9 +1579,22 @@ export default function PosPage({ onNavigateToFacturacion }) {
                 )}
               </div>
 
-              <div className="text-center pt-2.5 border-t border-dashed border-slate-300 text-[10px] text-slate-500 space-y-0.5">
-                <p className="font-semibold text-slate-700">¡Gracias por su compra en Mundo Escolar!</p>
-                <p>Factura física autorizada según resolución DGT-R-48-2016</p>
+              {/* Sección Código QR Fiscal Interactivo */}
+              <div className="flex items-center justify-center gap-3 pt-3 border-t border-dashed border-slate-300">
+                <QrFiscal value={resultadoVenta.qrFiscalUrl} size={90} />
+                <div className="text-left space-y-1 text-[10px] text-slate-500 max-w-[170px]">
+                  <p className="font-bold text-slate-800">Verificación Oficial:</p>
+                  <p className="leading-tight text-[9px]">
+                    Escanee el código QR para validar este comprobante en la Oficina Virtual (ATV) del Ministerio de Hacienda.
+                  </p>
+                  <p className="text-[8.5px] text-emerald-700 font-bold">
+                    Emisión Electrónica Homologada
+                  </p>
+                </div>
+              </div>
+
+              <div className="text-center pt-2 text-[9.5px] text-slate-400">
+                ¡Gracias por su compra en Mundo Escolar! &bull; Documento Electrónico Tributario
               </div>
             </div>
 
@@ -1483,6 +1607,19 @@ export default function PosPage({ onNavigateToFacturacion }) {
                 title="Cerrar comprobante sin forzar nueva venta"
               >
                 Cerrar
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const msj = generarMensajeWhatsAppFactura(resultadoVenta);
+                  window.open(`https://wa.me/?text=${msj}`, '_blank');
+                }}
+                className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-white bg-[#25D366] hover:bg-[#20ba5a] rounded-xl shadow-sm transition active:scale-95"
+                title="Enviar comprobante electrónico al WhatsApp del cliente"
+              >
+                <Smartphone className="w-4 h-4" />
+                <span>WhatsApp</span>
               </button>
 
               <button

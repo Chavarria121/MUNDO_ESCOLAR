@@ -24,7 +24,8 @@ import {
   Mail,
   Phone,
   MapPin,
-  Sparkles
+  Sparkles,
+  ShoppingCart,
 } from 'lucide-react';
 import api from '../api/client';
 import { useAuth } from '../context/AuthContext';
@@ -42,6 +43,11 @@ export default function ComprasPage() {
   // Filtros
   const [busqueda, setBusqueda] = useState('');
   const [filtroEstado, setFiltroEstado] = useState('TODAS'); // 'TODAS' | 'PENDIENTES' | 'RECIBIDAS' | 'ANULADAS'
+  // Propuesta 1: Asistente Inteligente de Reabastecimiento (Smart Procurement)
+  const [sugerenciasReabastecimiento, setSugerenciasReabastecimiento] = useState([]);
+  const [modalSugerenciasAbierto, setModalSugerenciasAbierto] = useState(false);
+  const [generandoOrdenes, setGenerandoOrdenes] = useState(false);
+  const [cantidadesEditables, setCantidadesEditables] = useState({});
 
   // Modales
   const [modalNuevaCompraAbierto, setModalNuevaCompraAbierto] = useState(false);
@@ -317,15 +323,17 @@ export default function ComprasPage() {
   const cargarDatos = async () => {
     setLoading(true);
     try {
-      const [resCompras, resProvs, resProds] = await Promise.all([
+      const [resCompras, resProvs, resProds, resSugerencias] = await Promise.all([
         api.get('/compras'),
         api.get('/proveedores/activos'),
         api.get('/productos/inventario'),
+        api.get('/compras/reabastecimiento/sugerencias'),
       ]);
 
       setCompras(resCompras.data || []);
       setProveedores(resProvs.data || []);
       setProductos(resProds.data || []);
+      setSugerenciasReabastecimiento(resSugerencias.data || []);
 
       if (resProvs.data?.length > 0) {
         setProveedorSeleccionadoId(resProvs.data[0].Id_Proveedor);
@@ -358,6 +366,69 @@ export default function ComprasPage() {
       totalCompras: compras.length,
     };
   }, [compras, proveedores]);
+
+  // Cálculos de Smart Procurement
+  const totalInversionSugerida = useMemo(() => {
+    return sugerenciasReabastecimiento.reduce((acc, it) => {
+      const cant = cantidadesEditables[it.Id_Producto] !== undefined ? cantidadesEditables[it.Id_Producto] : it.Cantidad_Sugerida;
+      return acc + (Number(cant || 0) * Number(it.Costo_Unitario || 0));
+    }, 0);
+  }, [sugerenciasReabastecimiento, cantidadesEditables]);
+
+  const sugerenciasPorProveedor = useMemo(() => {
+    const grupos = {};
+    for (const it of sugerenciasReabastecimiento) {
+      if (!grupos[it.Id_Proveedor]) {
+        grupos[it.Id_Proveedor] = {
+          idProveedor: it.Id_Proveedor,
+          nombreProveedor: it.Nombre_Proveedor,
+          tipoProveedor: it.Tipo_Proveedor,
+          telefono: it.Telefono_Contacto,
+          correo: it.Correo_Contacto,
+          items: [],
+        };
+      }
+      grupos[it.Id_Proveedor].items.push(it);
+    }
+    return Object.values(grupos);
+  }, [sugerenciasReabastecimiento]);
+
+  const emitirOrdenesSugeridas = async () => {
+    setGenerandoOrdenes(true);
+    try {
+      const grupos = {};
+      for (const s of sugerenciasReabastecimiento) {
+        const cant = cantidadesEditables[s.Id_Producto] !== undefined ? cantidadesEditables[s.Id_Producto] : s.Cantidad_Sugerida;
+        if (Number(cant) <= 0) continue;
+        if (!grupos[s.Id_Proveedor]) {
+          grupos[s.Id_Proveedor] = {
+            idProveedor: s.Id_Proveedor,
+            items: [],
+          };
+        }
+        grupos[s.Id_Proveedor].items.push({
+          idProducto: s.Id_Producto,
+          cantidad: parseInt(cant, 10),
+          costoUnitario: Number(s.Costo_Unitario),
+        });
+      }
+      const ordenes = Object.values(grupos);
+      if (!ordenes.length) {
+        showToast('No hay cantidades para emitir órdenes', 'warning');
+        return;
+      }
+      const res = await api.post('/compras/reabastecimiento/generar-ordenes', { ordenes });
+      showToast(`${res.data.mensaje} (${res.data.totalOrdenes} órdenes generadas)`, 'success');
+      setModalSugerenciasAbierto(false);
+      setCantidadesEditables({});
+      cargarDatos();
+    } catch (err) {
+      console.error('Error generando órdenes:', err);
+      showToast('Error al emitir órdenes de compra automáticas', 'error');
+    } finally {
+      setGenerandoOrdenes(false);
+    }
+  };
 
   // Filtrado de la tabla
   const comprasFiltradas = useMemo(() => {
@@ -623,6 +694,50 @@ export default function ComprasPage() {
           </span>
         </div>
       </div>
+
+      {/* Banner Inteligente de Reabastecimiento Automático (Propuesta 1 - Smart Procurement) */}
+      {sugerenciasReabastecimiento.length > 0 ? (
+        <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-300 rounded-2xl p-4 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4 animate-in fade-in">
+          <div className="flex items-center gap-3.5">
+            <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-amber-500 to-amber-600 text-white flex items-center justify-center shrink-0 shadow-md">
+              <Sparkles className="w-6 h-6 animate-pulse" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h4 className="font-bold text-sm text-[#132B20]">
+                  Asistente Inteligente de Reabastecimiento Automático (Smart Procurement)
+                </h4>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-rose-100 text-rose-800 border border-rose-300">
+                  {sugerenciasReabastecimiento.length} producto(s) en riesgo de quiebre
+                </span>
+              </div>
+              <p className="text-xs text-slate-600 mt-0.5">
+                Existencias bajo punto de reorden asignadas a proveedores preferentes en dbo.Producto_Proveedor. Inversión estimada: <strong className="text-emerald-700 font-bold">₡{totalInversionSugerida.toLocaleString('es-CR')}</strong>
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setModalSugerenciasAbierto(true)}
+            className="flex items-center gap-2 px-4 py-2.5 bg-[#2D5E46] hover:bg-[#1E4331] text-white text-xs font-bold rounded-xl shadow-md transition whitespace-nowrap active:scale-95"
+          >
+            <ShoppingCart className="w-4 h-4" />
+            <span>Ver Sugerencias &bull; Emitir en 1 Clic</span>
+          </button>
+        </div>
+      ) : (
+        <div className="bg-emerald-50/80 border border-emerald-200 rounded-2xl p-3 flex items-center justify-between text-xs text-emerald-800 shadow-xs">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+            <span className="font-bold">Inventario en Niveles Óptimos:</span>
+            <span>Todos los productos superan el punto de reorden con stock de seguridad adecuado.</span>
+          </div>
+          <span className="text-[10px] uppercase font-bold text-emerald-700 bg-white px-2 py-0.5 rounded-md border border-emerald-200">
+            Cadena de Suministro OK
+          </span>
+        </div>
+      )}
 
       {/* Filtros */}
       <div className="bg-white rounded-2xl border border-[#DFD5C4] p-4 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3">
@@ -1741,6 +1856,162 @@ export default function ComprasPage() {
           </div>
         </div>
       )}
+      {/* ================= MODAL SMART PROCUREMENT (REABASTECIMIENTO AUTOMÁTICO) ================= */}
+      {modalSugerenciasAbierto && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#132B20]/65 backdrop-blur-sm p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl max-w-3xl w-full max-h-[90vh] shadow-2xl border border-[#DFD5C4] overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-150">
+            {/* Header Modal */}
+            <div className="bg-[#132B20] text-white p-5 flex items-center justify-between shrink-0">
+              <div>
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-5 h-5 text-amber-400" />
+                  <h3 className="font-bold text-base">Asistente de Reabastecimiento Automático (Smart Procurement)</h3>
+                </div>
+                <p className="text-xs text-emerald-100 mt-0.5">
+                  Lote económico calculado automáticamente con base en dbo.Producto_Proveedor y punto de reorden.
+                </p>
+              </div>
+              <button
+                onClick={() => setModalSugerenciasAbierto(false)}
+                className="p-1 text-slate-400 hover:text-white rounded-lg transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Contenido Desplazable con Grupos por Proveedor */}
+            <div className="p-6 overflow-y-auto space-y-6 flex-1 text-xs">
+              <div className="bg-amber-50/80 border border-amber-200 rounded-xl p-3.5 flex items-center justify-between text-xs text-amber-900">
+                <div className="space-y-0.5">
+                  <p className="font-bold">Algoritmo de Emisión Consolidada:</p>
+                  <p className="text-[11px] text-amber-800">
+                    El sistema agrupa los productos críticos por su distribuidor preferente (EsPrincipal = 1) para generar órdenes separadas en estado Pendiente.
+                  </p>
+                </div>
+                <div className="text-right shrink-0">
+                  <span className="text-[10px] text-slate-500 uppercase block font-bold">Inversión Total</span>
+                  <span className="text-base font-black text-emerald-800">₡{totalInversionSugerida.toLocaleString('es-CR')}</span>
+                </div>
+              </div>
+
+              {sugerenciasPorProveedor.map((grupo) => {
+                const subtotalGrupo = grupo.items.reduce((acc, it) => {
+                  const cant = cantidadesEditables[it.Id_Producto] !== undefined ? cantidadesEditables[it.Id_Producto] : it.Cantidad_Sugerida;
+                  return acc + (Number(cant || 0) * Number(it.Costo_Unitario || 0));
+                }, 0);
+
+                return (
+                  <div key={grupo.idProveedor} className="border border-[#DFD5C4] rounded-xl overflow-hidden bg-white shadow-xs">
+                    {/* Header Proveedor */}
+                    <div className="bg-[#FAF7F0] p-3 border-b border-[#DFD5C4] flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Building className="w-4 h-4 text-[#2D5E46]" />
+                        <span className="font-bold text-sm text-[#132B20]">{grupo.nombreProveedor}</span>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-200/80 text-slate-700">
+                          {grupo.tipoProveedor}
+                        </span>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-[10px] text-slate-500 mr-1">Subtotal Proveedor:</span>
+                        <span className="font-bold text-emerald-700 text-xs">₡{subtotalGrupo.toLocaleString('es-CR')}</span>
+                      </div>
+                    </div>
+
+                    {/* Tabla de Artículos para este Proveedor */}
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-slate-50 text-slate-500 border-b border-slate-200">
+                        <tr>
+                          <th className="py-2 px-3">Producto</th>
+                          <th className="py-2 px-3 text-center">Stock Actual</th>
+                          <th className="py-2 px-3 text-center">Punto Reorden</th>
+                          <th className="py-2 px-3 text-center">Cantidad a Pedir</th>
+                          <th className="py-2 px-3 text-right">Costo Mayorista</th>
+                          <th className="py-2 px-3 text-right">Subtotal</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {grupo.items.map((it) => {
+                          const cant = cantidadesEditables[it.Id_Producto] !== undefined ? cantidadesEditables[it.Id_Producto] : it.Cantidad_Sugerida;
+                          const subtotalLinea = Number(cant || 0) * Number(it.Costo_Unitario || 0);
+
+                          return (
+                            <tr key={it.Id_Producto} className="hover:bg-slate-50/60">
+                              <td className="py-2.5 px-3">
+                                <span className="font-bold text-slate-800 block">{it.Nombre_Producto}</span>
+                                <span className="text-[10px] text-slate-400">{it.Categoria}</span>
+                              </td>
+                              <td className="py-2.5 px-3 text-center">
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800">
+                                  {it.Stock_Actual} uds
+                                </span>
+                              </td>
+                              <td className="py-2.5 px-3 text-center font-semibold text-slate-600">
+                                {it.Punto_Reorden}
+                              </td>
+                              <td className="py-2.5 px-3 text-center">
+                                <input
+                                  type="number"
+                                  min="1"
+                                  value={cant}
+                                  onChange={(e) => {
+                                    const val = parseInt(e.target.value, 10);
+                                    setCantidadesEditables({
+                                      ...cantidadesEditables,
+                                      [it.Id_Producto]: isNaN(val) ? 0 : val,
+                                    });
+                                  }}
+                                  className="w-16 px-2 py-1 text-center font-bold text-slate-800 bg-amber-50 border border-amber-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#2D5E46]"
+                                />
+                              </td>
+                              <td className="py-2.5 px-3 text-right text-slate-600">
+                                ₡{Number(it.Costo_Unitario).toLocaleString('es-CR')}
+                              </td>
+                              <td className="py-2.5 px-3 text-right font-bold text-emerald-800">
+                                ₡{subtotalLinea.toLocaleString('es-CR')}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Footer Modal con Emisión en 1 Clic */}
+            <div className="p-4 bg-[#FAF7F0] border-t border-[#DFD5C4] flex items-center justify-between shrink-0">
+              <button
+                type="button"
+                onClick={() => setModalSugerenciasAbierto(false)}
+                className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition"
+              >
+                Cancelar
+              </button>
+
+              <button
+                type="button"
+                onClick={emitirOrdenesSugeridas}
+                disabled={generandoOrdenes || totalInversionSugerida <= 0}
+                className="flex items-center gap-2 px-5 py-2.5 bg-[#2D5E46] hover:bg-[#1E4331] text-white text-xs font-bold rounded-xl shadow-md transition disabled:opacity-50 active:scale-95"
+              >
+                {generandoOrdenes ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    <span>Generando Órdenes en Borrador...</span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>Emitir Órdenes de Compra Sugeridas (₡{totalInversionSugerida.toLocaleString('es-CR')})</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

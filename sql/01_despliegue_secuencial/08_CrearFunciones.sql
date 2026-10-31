@@ -255,6 +255,8 @@ RETURN
         p.Nombre AS Nombre_Producto,
         cat.Nombre AS Categoria,
         SUM(vp.Cantidad) AS Unidades_Vendidas,
+        CAST(SUM(vp.Subtotal) / NULLIF(SUM(vp.Cantidad), 0) AS DECIMAL(18,2)) AS Precio_Promedio,
+        CAST(SUM(vp.Subtotal) / NULLIF(SUM(vp.Cantidad), 0) AS DECIMAL(18,2)) AS Precio_Unitario,
         SUM(vp.Subtotal) AS Monto_Total_Vendido
     FROM Venta_Producto vp
     INNER JOIN Venta v ON vp.Id_Venta = v.Id_Venta

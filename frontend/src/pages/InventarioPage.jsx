@@ -22,7 +22,8 @@ import {
   Layers,
   Wrench,
   Sparkles,
-  RotateCcw
+  RotateCcw,
+  Building2,
 } from 'lucide-react';
 import api from '../api/client';
 import { useAuth } from '../context/AuthContext';
@@ -34,6 +35,14 @@ export default function InventarioPage() {
 
   // Pestaña activa: 'PRODUCTOS' | 'SERVICIOS' | 'KARDEX'
   const [tabActiva, setTabActiva] = useState('PRODUCTOS');
+  // Pestaña 4: Asociaciones Producto - Proveedor (dbo.Producto_Proveedor)
+  const [asociacionesProveedor, setAsociacionesProveedor] = useState([]);
+  const [proveedoresActivos, setProveedoresActivos] = useState([]);
+  const [busquedaProveedor, setBusquedaProveedor] = useState('');
+  const [filtroProveedorSelect, setFiltroProveedorSelect] = useState('TODOS');
+  const [modalAsociarAbierto, setModalAsociarAbierto] = useState(false);
+  const [formAsociacion, setFormAsociacion] = useState({ idProducto: '', idProveedor: '', precioCompra: '', esPrincipal: true });
+  const [guardandoAsociacion, setGuardandoAsociacion] = useState(false);
 
   // Estados de datos
   const [productos, setProductos] = useState([]);
@@ -157,12 +166,14 @@ export default function InventarioPage() {
   const cargarDatos = async () => {
     setLoading(true);
     try {
-      const [resProds, resServs, resMovs, resCats, resReorden] = await Promise.all([
+      const [resProds, resServs, resMovs, resCats, resReorden, resAsoc, resPrvs] = await Promise.all([
         api.get('/productos/inventario'),
         api.get('/servicios'),
         api.get('/inventario/movimientos/vista'),
         api.get('/catalogos/categorias'),
         api.get('/inventario/bajo-reorden'),
+        api.get('/proveedores/productos-asociados/vista'),
+        api.get('/proveedores/activos'),
       ]);
 
       setProductos(resProds.data || []);
@@ -170,11 +181,56 @@ export default function InventarioPage() {
       setMovimientos(resMovs.data || []);
       setCategorias(resCats.data || []);
       setBajoReorden(resReorden.data || []);
+      setAsociacionesProveedor(resAsoc.data || []);
+      setProveedoresActivos(resPrvs.data || []);
     } catch (err) {
       console.error('Error cargando datos de inventario:', err);
       showToast('Error al consultar inventario', 'error');
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Filtrado de Asociaciones Producto - Proveedor
+  const asociacionesFiltradas = useMemo(() => {
+    const term = busquedaProveedor.toLowerCase().trim();
+    return asociacionesProveedor.filter((a) => {
+      const coincideBusqueda =
+        !term ||
+        (a.Nombre_Producto && a.Nombre_Producto.toLowerCase().includes(term)) ||
+        (a.Nombre_Proveedor && a.Nombre_Proveedor.toLowerCase().includes(term)) ||
+        (a.Categoria && a.Categoria.toLowerCase().includes(term));
+      const coincideProveedor =
+        filtroProveedorSelect === 'TODOS' || String(a.Id_Proveedor) === String(filtroProveedorSelect);
+      return coincideBusqueda && coincideProveedor;
+    });
+  }, [asociacionesProveedor, busquedaProveedor, filtroProveedorSelect]);
+
+  const guardarAsociacion = async (e) => {
+    e.preventDefault();
+    if (!formAsociacion.idProducto || !formAsociacion.idProveedor || !formAsociacion.precioCompra) {
+      showToast('Seleccione producto, proveedor y precio de compra', 'warning');
+      return;
+    }
+    setGuardandoAsociacion(true);
+    try {
+      await api.post('/proveedores/productos-asociados', {
+        idProducto: parseInt(formAsociacion.idProducto, 10),
+        idProveedor: parseInt(formAsociacion.idProveedor, 10),
+        precioCompra: parseFloat(formAsociacion.precioCompra),
+        esPrincipal: formAsociacion.esPrincipal,
+      });
+      showToast('Asociación producto-proveedor guardada con éxito', 'success');
+      setModalAsociarAbierto(false);
+      setFormAsociacion({ idProducto: '', idProveedor: '', precioCompra: '', esPrincipal: true });
+      const res = await api.get('/proveedores/productos-asociados/vista');
+      setAsociacionesProveedor(res.data || []);
+    } catch (err) {
+      console.error('Error asociando producto:', err);
+      const msg = err.response?.data?.mensaje || err.message || 'Error al guardar'; 
+      showToast(`Error: ${msg}`, 'error');
+    } finally {
+      setGuardandoAsociacion(false);
     }
   };
 
@@ -628,6 +684,17 @@ export default function InventarioPage() {
           <History className="w-4 h-4" />
           <span>Libro Kárdex de Movimientos ({movimientos.length})</span>
         </button>
+        <button
+          onClick={() => setTabActiva('PROVEEDORES')}
+          className={`flex items-center gap-2 px-4 py-2 text-xs font-bold rounded-xl transition ${
+            tabActiva === 'PROVEEDORES'
+              ? 'bg-[#132B20] text-white shadow-sm'
+              : 'text-slate-600 hover:bg-slate-100'
+          }`}
+        >
+          <Building2 className="w-4 h-4" />
+          <span>Proveedores por Producto ({asociacionesProveedor.length})</span>
+        </button>
       </div>
 
       {/* ================= TAB 1: PRODUCTOS ================= */}
@@ -728,7 +795,7 @@ export default function InventarioPage() {
 
                           <td className="py-3 px-4 text-center">
                             <span
-                              className={`inline-block px-2.5 py-1 rounded-full font-black text-xs ${
+                              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full font-black text-xs ${
                                 esAgotado
                                   ? 'bg-rose-100 text-rose-700 border border-rose-200'
                                   : stockBajo
@@ -736,6 +803,12 @@ export default function InventarioPage() {
                                   : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
                               }`}
                             >
+                              {(stockBajo || esAgotado) && (
+                                <span className="relative flex h-2 w-2">
+                                  <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${esAgotado ? 'bg-rose-400' : 'bg-amber-400'}`}></span>
+                                  <span className={`relative inline-flex rounded-full h-2 w-2 ${esAgotado ? 'bg-rose-600' : 'bg-amber-600'}`}></span>
+                                </span>
+                              )}
                               {prod.Stock_Actual} uds
                             </span>
                           </td>
@@ -964,6 +1037,129 @@ export default function InventarioPage() {
                       </tr>
                     );
                   })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ================= TAB 4: PROVEEDORES HOMOLOGADOS (dbo.Producto_Proveedor) ================= */}
+      {tabActiva === 'PROVEEDORES' && (
+        <div className="space-y-4">
+          {/* Barra de Filtros y Acción de Homologación */}
+          <div className="bg-white rounded-2xl border border-[#DFD5C4] p-4 shadow-sm flex flex-col md:flex-row items-center justify-between gap-3">
+            <div className="flex flex-1 items-center gap-2 w-full">
+              <div className="relative flex-1">
+                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  value={busquedaProveedor}
+                  onChange={(e) => setBusquedaProveedor(e.target.value)}
+                  placeholder="Buscar por producto, categoría o proveedor homologado..."
+                  className="w-full pl-9 pr-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#2D5E46]"
+                />
+              </div>
+
+              <select
+                value={filtroProveedorSelect}
+                onChange={(e) => setFiltroProveedorSelect(e.target.value)}
+                className="px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#2D5E46] text-slate-700"
+              >
+                <option value="TODOS">Todos los Proveedores</option>
+                {proveedoresActivos.map((prv) => (
+                  <option key={prv.Id_Proveedor} value={prv.Id_Proveedor}>
+                    {prv.Nombre_Proveedor}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <button
+              onClick={() => setModalAsociarAbierto(true)}
+              className="flex items-center gap-1.5 px-4 py-2 bg-[#2D5E46] hover:bg-[#1E4331] text-white text-xs font-bold rounded-xl shadow-sm transition whitespace-nowrap"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Homologar Producto con Proveedor</span>
+            </button>
+          </div>
+
+          {/* Tabla de Asociaciones */}
+          <div className="bg-white rounded-2xl border border-[#DFD5C4] shadow-sm overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-[#FAF7F0] text-[#5C3622] uppercase tracking-wider font-bold border-b border-[#DFD5C4]">
+                  <tr>
+                    <th className="py-3 px-4">Producto en Catálogo</th>
+                    <th className="py-3 px-4">Categoría</th>
+                    <th className="py-3 px-4">Proveedor Homologado</th>
+                    <th className="py-3 px-4">Tipo Proveedor</th>
+                    <th className="py-3 px-4 text-right">Costo Compra (Mayorista)</th>
+                    <th className="py-3 px-4 text-right">Precio Venta (PVP)</th>
+                    <th className="py-3 px-4 text-right">Margen Bruto</th>
+                    <th className="py-3 px-4 text-center">Rol Proveedor</th>
+                    <th className="py-3 px-4 text-center">Estado</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {asociacionesFiltradas.length === 0 ? (
+                    <tr>
+                      <td colSpan="9" className="py-10 text-center text-slate-400">
+                        No se encontraron homologaciones de producto-proveedor registradas.
+                      </td>
+                    </tr>
+                  ) : (
+                    asociacionesFiltradas.map((asoc) => {
+                      const costo = Number(asoc.Precio_Compra || 0);
+                      const venta = Number(asoc.Precio_Venta || 0);
+                      const margenColones = venta - costo;
+                      const margenPct = venta > 0 ? ((margenColones / venta) * 100).toFixed(1) : 0;
+                      const esPrincipal = asoc.EsPrincipal === 1 || asoc.EsPrincipal === true;
+
+                      return (
+                        <tr key={asoc.Id_Producto_Proveedor} className="hover:bg-slate-50 transition">
+                          <td className="py-3 px-4 font-bold text-slate-800">
+                            {asoc.Nombre_Producto}
+                          </td>
+                          <td className="py-3 px-4">
+                            <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 text-[10px] font-semibold">
+                              {asoc.Categoria}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 font-semibold text-[#132B20]">
+                            {asoc.Nombre_Proveedor}
+                          </td>
+                          <td className="py-3 px-4 text-slate-500 text-[11px]">
+                            {asoc.Tipo_Proveedor}
+                          </td>
+                          <td className="py-3 px-4 text-right font-bold text-amber-900">
+                            ₡{costo.toLocaleString('es-CR')}
+                          </td>
+                          <td className="py-3 px-4 text-right font-bold text-slate-800">
+                            ₡{venta.toLocaleString('es-CR')}
+                          </td>
+                          <td className="py-3 px-4 text-right">
+                            <span className="font-bold text-emerald-700">₡{margenColones.toLocaleString('es-CR')}</span>
+                            <span className="text-[10px] text-emerald-600 block">({margenPct}%)</span>
+                          </td>
+                          <td className="py-3 px-4 text-center">
+                            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase ${
+                              esPrincipal
+                                ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                                : 'bg-slate-100 text-slate-600 border border-slate-200'
+                            }`}>
+                              {esPrincipal ? 'Principal (Prioritario)' : 'Secundario'}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 text-center">
+                            <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 text-[10px] font-bold">
+                              Activo
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
                 </tbody>
               </table>
             </div>
@@ -1515,6 +1711,119 @@ export default function InventarioPage() {
           </div>
         </div>
       )}
+      {/* ================= MODAL ASOCIAR PRODUCTO CON PROVEEDOR ================= */}
+      {modalAsociarAbierto && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#132B20]/60 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl border border-[#DFD5C4] overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="bg-[#132B20] text-white p-5 flex items-center justify-between">
+              <h3 className="font-bold text-base flex items-center gap-2">
+                <Building2 className="w-5 h-5 text-emerald-400" />
+                <span>Homologar Producto con Proveedor</span>
+              </h3>
+              <button
+                onClick={() => setModalAsociarAbierto(false)}
+                className="p-1 text-slate-400 hover:text-white rounded-lg transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={guardarAsociacion} className="p-6 space-y-4 text-xs">
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Producto en Catálogo *</label>
+                <select
+                  value={formAsociacion.idProducto}
+                  onChange={(e) => setFormAsociacion({ ...formAsociacion, idProducto: e.target.value })}
+                  required
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#2D5E46]"
+                >
+                  <option value="">Seleccione un producto...</option>
+                  {productos.map((prod) => (
+                    <option key={prod.Id_Producto} value={prod.Id_Producto}>
+                      {prod.Nombre} ({prod.Categoria})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Proveedor Distribuidor *</label>
+                <select
+                  value={formAsociacion.idProveedor}
+                  onChange={(e) => setFormAsociacion({ ...formAsociacion, idProveedor: e.target.value })}
+                  required
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#2D5E46]"
+                >
+                  <option value="">Seleccione un proveedor...</option>
+                  {proveedoresActivos.map((prv) => (
+                    <option key={prv.Id_Proveedor} value={prv.Id_Proveedor}>
+                      {prv.Nombre_Proveedor} ({prv.Tipo_Proveedor})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Precio de Compra Mayorista (₡) *</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  required
+                  value={formAsociacion.precioCompra}
+                  onChange={(e) => setFormAsociacion({ ...formAsociacion, precioCompra: e.target.value })}
+                  placeholder="Ej. 850.00"
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#2D5E46]"
+                />
+                <p className="text-[10px] text-slate-400 mt-0.5">
+                  Costo de adquisición que se utilizará para órdenes de compra y cálculo de rentabilidad.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2 pt-1">
+                <input
+                  type="checkbox"
+                  id="checkEsPrincipal"
+                  checked={formAsociacion.esPrincipal}
+                  onChange={(e) => setFormAsociacion({ ...formAsociacion, esPrincipal: e.target.checked })}
+                  className="w-4 h-4 text-[#2D5E46] rounded focus:ring-[#2D5E46]"
+                />
+                <label htmlFor="checkEsPrincipal" className="font-semibold text-slate-700 select-none">
+                  Designar como Proveedor Principal (Prioritario para Reabastecimiento)
+                </label>
+              </div>
+
+              <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setModalAsociarAbierto(false)}
+                  className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-xl transition font-semibold"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={guardandoAsociacion}
+                  className="flex items-center gap-1.5 px-4 py-2 bg-[#2D5E46] hover:bg-[#1E4331] text-white font-bold rounded-xl shadow-sm transition disabled:opacity-50"
+                >
+                  {guardandoAsociacion ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>Guardando...</span>
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      <span>Guardar Homologación</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

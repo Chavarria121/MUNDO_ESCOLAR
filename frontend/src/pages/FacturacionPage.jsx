@@ -21,8 +21,13 @@ import {
   X,
   Calendar,
   AlertTriangle,
-  ChevronRight
+  ChevronRight,
+  Smartphone,
+  Copy,
+  Check,
 } from 'lucide-react';
+import QrFiscal from '../components/QrFiscal';
+import { generarClaveHacienda50, formatearClaveHacienda, generarQrFiscalUrl } from '../utils/haciendaUtils';
 import api from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
@@ -577,6 +582,56 @@ export default function FacturacionPage({ onNavigateToPos }) {
                     </div>
                   </div>
 
+                  {/* Clave Oficial DGT Hacienda Costa Rica (50 Dígitos) & QR Fiscal */}
+                  <div className="bg-white border border-[#DFD5C4] rounded-xl p-3.5 flex flex-col md:flex-row items-center justify-between gap-4 shadow-xs">
+                    <div className="space-y-1 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
+                          Comprobante Electrónico DGT Costa Rica (Res. DGT-R-033-2019)
+                        </span>
+                        <span className="text-[10px] text-slate-500 font-mono">Tipo Doc: 01 (Factura)</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <p className="text-[11px] font-bold text-slate-700">CLAVE NUMÉRICA TRIBUTARIA (50 DÍGITOS):</p>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const c = generarClaveHacienda50({
+                              idFactura: facturaSeleccionada.Id_Factura,
+                              fecha: facturaSeleccionada.Fecha_Emision,
+                              tipoComprobante: '01',
+                            });
+                            copiarClaveFactura(c);
+                          }}
+                          className="inline-flex items-center gap-1 text-[9.5px] font-bold text-[#C05A3E] hover:text-[#AA4C33] bg-[#FAF7F0] border border-[#DFD5C4] px-2 py-0.5 rounded-lg transition shadow-xs cursor-pointer active:scale-95 no-print"
+                          title="Copiar clave numérica completa de 50 dígitos"
+                        >
+                          {claveCopiadaFactura ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                          <span>{claveCopiadaFactura ? '¡Copiada!' : 'Copiar clave'}</span>
+                        </button>
+                      </div>
+                      <p className="font-mono text-[10px] text-slate-900 bg-slate-50 p-2 rounded-lg border border-slate-200 select-all font-semibold break-all">
+                        {formatearClaveHacienda(
+                          generarClaveHacienda50({
+                            idFactura: facturaSeleccionada.Id_Factura,
+                            fecha: facturaSeleccionada.Fecha_Emision,
+                            tipoComprobante: '01',
+                          })
+                        )}
+                      </p>
+                    </div>
+                    <QrFiscal
+                      value={generarQrFiscalUrl(
+                        generarClaveHacienda50({
+                          idFactura: facturaSeleccionada.Id_Factura,
+                          fecha: facturaSeleccionada.Fecha_Emision,
+                          tipoComprobante: '01',
+                        })
+                      )}
+                      size={85}
+                    />
+                  </div>
+
                   {/* Tabla de Líneas de Productos y Servicios */}
                   <div>
                     <h4 className="font-bold text-slate-800 text-xs uppercase tracking-wider mb-2">
@@ -720,6 +775,31 @@ export default function FacturacionPage({ onNavigateToPos }) {
 
             {/* Footer Modal */}
             <div className="p-4 bg-[#FAF7F0] border-t border-[#DFD5C4] flex items-center justify-between no-print">
+              <button
+                type="button"
+                onClick={() => {
+                  const clave = generarClaveHacienda50({
+                    idFactura: facturaSeleccionada.Id_Factura,
+                    fecha: facturaSeleccionada.Fecha_Emision,
+                    tipoComprobante: '01',
+                  });
+                  const msj = encodeURIComponent(
+                    `*LIBRERÍA Y PAPELERÍA MUNDO ESCOLAR*\n` +
+                    `📄 Factura Electrónica: FAC-${facturaSeleccionada.Id_Factura.toString().padStart(8, '0')}\n` +
+                    `🔑 Clave Hacienda (50 dígitos): ${clave}\n` +
+                    `👤 Cliente: ${facturaSeleccionada.Nombre_Cliente}\n` +
+                    `💰 Total: ₡${Number(facturaSeleccionada.Total).toLocaleString('es-CR')}\n` +
+                    `Consulta oficial ATV: https://atv.hacienda.go.cr/ATV/Login.aspx?clave=${clave}`
+                  );
+                  window.open(`https://wa.me/?text=${msj}`, '_blank');
+                }}
+                className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-white bg-[#25D366] hover:bg-[#20ba5a] rounded-xl shadow-sm transition active:scale-95"
+                title="Enviar comprobante electrónico al WhatsApp del cliente"
+              >
+                <Smartphone className="w-4 h-4" />
+                <span>WhatsApp</span>
+              </button>
+
               <button
                 onClick={() => window.print()}
                 className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-[#132B20] bg-white border border-[#DFD5C4] rounded-xl hover:bg-slate-100 transition"

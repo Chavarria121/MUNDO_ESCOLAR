@@ -1,0 +1,123 @@
+// ============================================================================
+// PROYECTO: LIBRERÍA Y PAPELERÍA MUNDO ESCOLAR
+// ARCHIVO: Medidas_DAX_PowerBI.dax (FASE 6)
+// Destinatario: Lic. / Prof. Torrentes
+// Propósito: Diccionario completo de Parámetros What-If, Medidas Financieras,
+//            Sensibilidad de Márgenes, Abastecimiento e Inventario en Power BI.
+// ============================================================================
+
+// ============================================================================
+// 1. TABLAS CALCULADAS PARA PARÁMETROS WHAT-IF (Modelado -> Nueva Tabla)
+// ============================================================================
+
+// Parámetro 1: Descuento negociado con Proveedores (0% a 20%, paso 1%)
+Par_Descuento_Proveedor = 
+GENERATESERIES(0, 0.20, 0.01)
+
+// Columna calculada de formato para Par_Descuento_Proveedor
+Par_Descuento_Proveedor[Etiqueta_Pct] = 
+FORMAT(Par_Descuento_Proveedor[Value], "0.0%")
+
+
+// Parámetro 2: Inflación proyectada en Costos de Adquisición (0% a 30%, paso 2%)
+Par_Inflacion_Costos = 
+GENERATESERIES(0, 0.30, 0.02)
+
+// Columna calculada de formato para Par_Inflacion_Costos
+Par_Inflacion_Costos[Etiqueta_Pct] = 
+FORMAT(Par_Inflacion_Costos[Value], "0.0%")
+
+
+// ============================================================================
+// 2. MEDIDAS DE CAPTURA DE PARÁMETROS
+// ============================================================================
+
+Tasa_Descuento_Seleccionada = 
+SELECTEDVALUE(Par_Descuento_Proveedor[Value], 0.0)
+
+Tasa_Inflacion_Seleccionada = 
+SELECTEDVALUE(Par_Inflacion_Costos[Value], 0.0)
+
+
+// ============================================================================
+// 3. MEDIDAS FINANCIERAS HISTÓRICAS (ELIMINACIÓN DE LA ILUSIÓN DEL 100%)
+// ============================================================================
+
+Ventas_Totales = 
+SUM(dw_FactVentas[Monto_Total])
+
+Costo_Total_Historico = 
+SUMX(
+    dw_FactVentaProducto,
+    dw_FactVentaProducto[Cantidad] * dw_FactVentaProducto[Costo_Unitario]
+)
+
+Utilidad_Bruta_Historica = 
+[Ventas_Totales] - [Costo_Total_Historico]
+
+Margen_Bruto_Historico_Pct = 
+DIVIDE([Utilidad_Bruta_Historica], [Ventas_Totales], 0)
+
+
+// ============================================================================
+// 4. MEDIDAS DINÁMICAS DE SENSIBILIDAD WHAT-IF
+// ============================================================================
+
+Costo_Simulado_Total = 
+VAR FactorDesc = 1 - [Tasa_Descuento_Seleccionada]
+VAR FactorInf = 1 + [Tasa_Inflacion_Seleccionada]
+RETURN
+[Costo_Total_Historico] * FactorDesc * FactorInf
+
+Ganancia_Neta_Simulada = 
+[Ventas_Totales] - [Costo_Simulado_Total]
+
+Margen_Bruto_Simulado_Pct = 
+DIVIDE([Ganancia_Neta_Simulada], [Ventas_Totales], 0)
+
+Variacion_Utilidad_Colones = 
+[Ganancia_Neta_Simulada] - [Utilidad_Bruta_Historica]
+
+Variacion_Margen_Puntos = 
+([Margen_Bruto_Simulado_Pct] - [Margen_Bruto_Historico_Pct]) * 100
+
+
+// ============================================================================
+// 5. MEDIDAS DE CADENA DE SUMINISTRO Y PROVEEDORES (dw.FactCompras)
+// ============================================================================
+
+Lead_Time_Promedio_Dias = 
+AVERAGE(dw_FactCompras[Lead_Time_Dias])
+
+Tasa_Cumplimiento_Proveedor = 
+DIVIDE(
+    CALCULATE(COUNTROWS(dw_FactCompras), dw_FactCompras[Dias_Demora] = 0),
+    COUNTROWS(dw_FactCompras),
+    0
+)
+
+Total_Dias_Demora = 
+SUM(dw_FactCompras[Dias_Demora])
+
+Ordenes_Con_Retraso = 
+CALCULATE(COUNTROWS(dw_FactCompras), dw_FactCompras[Dias_Demora] > 0)
+
+
+// ============================================================================
+// 6. MEDIDAS DE INVENTARIO Y CAPITAL INMOVILIZADO (dw.FactInventario)
+// ============================================================================
+
+Capital_Inmovilizado_Total = 
+SUM(dw_FactInventario[Costo_Total_Inventario])
+
+Productos_Stock_Critico = 
+CALCULATE(
+    COUNTROWS(dw_FactInventario),
+    dw_FactInventario[Alerta_Reorden] = 1
+)
+
+Capital_En_Riesgo_Desabastecimiento = 
+CALCULATE(
+    SUM(dw_FactInventario[Costo_Total_Inventario]),
+    dw_FactInventario[Alerta_Reorden] = 1
+)
