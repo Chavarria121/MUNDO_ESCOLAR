@@ -63,7 +63,9 @@ export default function ComprasPage() {
   const [cargandoDetalle, setCargandoDetalle] = useState(false);
 
   const [modalAnulacionAbierto, setModalAnulacionAbierto] = useState(false);
+  const [modalRecepcionAbierto, setModalRecepcionAbierto] = useState(false);
   const [compraAAnular, setCompraAAnular] = useState(null);
+  const [compraARecepcionar, setCompraARecepcionar] = useState(null);
   const [motivoAnulacion, setMotivoAnulacion] = useState('');
 
   const [modalProveedoresAbierto, setModalProveedoresAbierto] = useState(false);
@@ -549,15 +551,24 @@ export default function ComprasPage() {
   };
 
   // Confirmar y Recepcionar Mercancía (Ingresa existencias al stock de bodega)
-  const recepcionarCompra = async (compra) => {
-    if (!window.confirm(`¿Desea confirmar la recepción de la Orden #${compra.Id_Compra}? Esto incrementará el stock en bodega y registrará los ingresos en Kárdex.`)) {
-      return;
-    }
+  const abrirRecepcion = (compra) => {
+    setCompraARecepcionar(compra);
+    setModalRecepcionAbierto(true);
+  };
+
+  const recepcionarCompra = (compra) => {
+    abrirRecepcion(compra);
+  };
+
+  const procesarRecepcion = async () => {
+    if (!compraARecepcionar) return;
 
     setGuardando(true);
     try {
-      await api.post(`/compras/${compra.Id_Compra}/confirmar`);
-      showToast(`¡Orden #${compra.Id_Compra} recepcionada y existencias ingresadas a bodega con éxito!`, 'success');
+      await api.post(`/compras/${compraARecepcionar.Id_Compra}/confirmar`);
+      showToast(`¡Orden #${compraARecepcionar.Id_Compra} recepcionada y existencias ingresadas a bodega con éxito!`, 'success');
+      setModalRecepcionAbierto(false);
+      setCompraARecepcionar(null);
       cargarDatos();
     } catch (err) {
       console.error('Error recepcionando compra:', err);
@@ -869,7 +880,7 @@ export default function ComprasPage() {
 
                           {esPendiente && (
                             <button
-                              onClick={() => recepcionarCompra(compra)}
+                              onClick={() => abrirRecepcion(compra)}
                               className="p-1.5 text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50 rounded-lg transition"
                               title="Confirmar Recepción e Ingresar a Bodega"
                             >
@@ -1233,6 +1244,78 @@ export default function ComprasPage() {
                 className="px-5 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl shadow-md transition disabled:opacity-50"
               >
                 {guardando ? 'Anulando...' : 'Confirmar Anulación'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+            {/* ================= MODAL CONFIRMACIÓN DE RECEPCIÓN ================= */}
+      {modalRecepcionAbierto && compraARecepcionar && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#132B20]/60 backdrop-blur-sm p-4 animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl border border-[#DFD5C4] overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="bg-[#132B20] text-white p-5 flex items-center justify-between">
+              <div>
+                <h3 className="font-bold text-base flex items-center gap-2">
+                  <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+                  Confirmar Recepción de Compra
+                </h3>
+                <p className="text-xs text-emerald-100 mt-0.5">
+                  OC-{compraARecepcionar.Id_Compra.toString().padStart(8, '0')} • {compraARecepcionar.Nombre_Proveedor}
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  setModalRecepcionAbierto(false);
+                  setCompraARecepcionar(null);
+                }}
+                className="p-1 text-emerald-200 hover:text-white rounded-lg transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4 text-xs">
+              <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 leading-relaxed font-medium">
+                ¿Desea confirmar la recepción de la <strong className="font-bold">Orden #{compraARecepcionar.Id_Compra}</strong>?
+                Al confirmar, el sistema incrementará automáticamente el inventario físico en bodega y registrará los movimientos contables en Kárdex.
+              </div>
+
+              <div className="bg-[#FAF7F0] border border-[#DFD5C4] rounded-xl p-3.5 flex justify-between items-center text-xs">
+                <span className="text-[#5C3622] font-semibold">Total de la Orden:</span>
+                <span className="font-black text-[#132B20] text-sm">
+                  ₡{Number(compraARecepcionar.Total || 0).toLocaleString('es-CR')}
+                </span>
+              </div>
+            </div>
+
+            <div className="p-4 bg-[#FAF7F0] border-t border-[#DFD5C4] flex items-center justify-end gap-2">
+              <button
+                onClick={() => {
+                  setModalRecepcionAbierto(false);
+                  setCompraARecepcionar(null);
+                }}
+                disabled={guardando}
+                className="px-4 py-2 text-slate-600 hover:bg-slate-200 rounded-xl font-semibold transition"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={procesarRecepcion}
+                disabled={guardando}
+                className="px-5 py-2 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-xl shadow-md transition disabled:opacity-50 flex items-center gap-1.5"
+              >
+                {guardando ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    <span>Confirmando...</span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>Confirmar Ingreso a Bodega</span>
+                  </>
+                )}
               </button>
             </div>
           </div>
