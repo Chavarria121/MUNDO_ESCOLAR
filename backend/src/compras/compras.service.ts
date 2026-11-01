@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { SqlService } from '../database/sql.service';
 import {
   AgregarProductoCompraDto,
@@ -10,6 +10,8 @@ import {
 
 @Injectable()
 export class ComprasService {
+  private readonly logger = new Logger(ComprasService.name);
+
   constructor(private readonly sql: SqlService) {}
 
   listarDetallesVista() {
@@ -131,18 +133,28 @@ export class ComprasService {
       if (!ord.items?.length) continue;
       const resCompra = await this.crearCompra({ idProveedor: ord.idProveedor }, idUsuario);
       const idCompra = resCompra.Id_Compra;
-      for (const it of ord.items) {
-        await this.agregarProducto(
-          idCompra,
-          {
-            idProducto: it.idProducto,
-            cantidad: it.cantidad,
-            costoUnitario: it.costoUnitario,
-          },
-          idUsuario,
-        );
+      try {
+        for (const it of ord.items) {
+          await this.agregarProducto(
+            idCompra,
+            {
+              idProducto: it.idProducto,
+              cantidad: it.cantidad,
+              costoUnitario: it.costoUnitario,
+            },
+            idUsuario,
+          );
+        }
+        ordenesCreadas.push({ idCompra, idProveedor: ord.idProveedor, totalItems: ord.items.length });
+      } catch (err) {
+        this.logger.error(`Fallo al agregar líneas a la orden sugerida #${idCompra}. Anulando orden preventiva...`, err);
+        try {
+          await this.anularCompra(idCompra, { motivo: 'Anulación automática por error en agregado de líneas de orden sugerida' }, idUsuario);
+        } catch (anulaErr) {
+          this.logger.error(`No se pudo anular la orden #${idCompra}:`, anulaErr);
+        }
+        throw err;
       }
-      ordenesCreadas.push({ idCompra, idProveedor: ord.idProveedor, totalItems: ord.items.length });
     }
     return {
       mensaje: 'Órdenes de compra generadas exitosamente en estado Pendiente',

@@ -79,14 +79,14 @@ export class ClientesController {
   @Post('particular')
   @ApiOperation({ summary: 'Registrar nuevo cliente particular (SP_Cliente_CrearPerfil)' })
   crearParticular(@Body() dto: CrearClienteParticularDto, @UsuarioActual() u?: UsuarioSesion) {
-    return this.clientes.crearParticular(dto, u?.idUsuario ?? 1);
+    return this.clientes.crearParticular(dto, u?.idUsuario ?? null);
   }
 
   // Registro de cliente institucional (Público desde Landing o colaboradores con sesión)
   @Post('institucional')
   @ApiOperation({ summary: 'Registrar nuevo cliente institucional (SP_Cliente_CrearPerfil)' })
   crearInstitucional(@Body() dto: CrearClienteInstitucionalDto, @UsuarioActual() u?: UsuarioSesion) {
-    return this.clientes.crearInstitucional(dto, u?.idUsuario ?? 1);
+    return this.clientes.crearInstitucional(dto, u?.idUsuario ?? null);
   }
 
   @Put(':id')

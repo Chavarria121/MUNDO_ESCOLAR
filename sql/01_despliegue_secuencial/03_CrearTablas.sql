@@ -165,14 +165,14 @@ GO
 -- Tabla 16: Bitacora
 CREATE TABLE Bitacora (
     Id_Bitacora INT IDENTITY(1,1) NOT NULL,
-    Id_Usuario INT NOT NULL,
+    Id_Usuario INT NULL, -- Permite auditoría de operaciones públicas anónimas sin actor previo
     Accion VARCHAR(100) NOT NULL,
     Tabla_Afectada VARCHAR(100) NOT NULL,
     Id_Registro_Afectado INT NOT NULL,
     Fecha_Hora DATETIME NOT NULL,
     Descripcion VARCHAR(200) NULL,
     CONSTRAINT PK_Bitacora PRIMARY KEY (Id_Bitacora)
-)
+) ON [FG_AUDITORIA]
 GO
 
 -- =========================================================================
@@ -300,7 +300,7 @@ CREATE TABLE Movimiento_Inventario (
     Fecha DATETIME NOT NULL,
     Motivo VARCHAR(150) NOT NULL,
     CONSTRAINT PK_Movimiento_Inventario PRIMARY KEY (Id_Movimiento_Inventario)
-)
+) ON [FG_TRANSACCIONAL]
 GO
 
 -- =========================================================================
@@ -327,7 +327,7 @@ CREATE TABLE Compra_Producto (
     Costo_Unitario DECIMAL(12,2) NOT NULL,
     Subtotal DECIMAL(12,2) NOT NULL,
     CONSTRAINT PK_Compra_Producto PRIMARY KEY (Id_Compra_Producto)
-)
+) ON [FG_TRANSACCIONAL]
 GO
 
 -- =========================================================================
@@ -358,7 +358,7 @@ CREATE TABLE Venta_Producto (
     Precio_Unitario DECIMAL(12,2) NOT NULL,
     Subtotal DECIMAL(12,2) NOT NULL,
     CONSTRAINT PK_Venta_Producto PRIMARY KEY (Id_Venta_Producto)
-)
+) ON [FG_TRANSACCIONAL]
 GO
 
 -- Tabla 31: Venta_Servicio (Líneas de Servicios)
@@ -386,6 +386,7 @@ CREATE TABLE Factura (
     Fecha_Vencimiento DATETIME NOT NULL,
     Monto_Total DECIMAL(12,2) NOT NULL,
     Saldo_Pendiente DECIMAL(12,2) NOT NULL,
+    Clave_Numerica_Fiscal VARCHAR(50) NULL, -- Código de 50 dígitos DGT Costa Rica (Simulación académica F6 / I-10)
     CONSTRAINT PK_Factura PRIMARY KEY (Id_Factura)
 )
 GO
@@ -400,5 +401,5 @@ CREATE TABLE Pago (
     Numero_Referencia VARCHAR(100) NULL,
     Estado BOOL NOT NULL,
     CONSTRAINT PK_Pago PRIMARY KEY (Id_Pago)
-)
+) ON [FG_TRANSACCIONAL]
 GO

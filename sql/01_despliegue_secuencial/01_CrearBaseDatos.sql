@@ -1,8 +1,15 @@
-﻿/* =========================================================================
-   SCRIPT 01: CREACIÓN DE LA BASE DE DATOS
+/* =========================================================================
+   SCRIPT 01: CREACIÓN DE LA BASE DE DATOS Y FILEGROUPS
    CASO DE ESTUDIO: LIBRERÍA Y PAPELERÍA MUNDO ESCOLAR (LIBERIA)
-   REQUERIMIENTO ASOCIADO: RA4.1
+   REQUERIMIENTO ASOCIADO: RA4.1 / H4 / Inconsistencia I-08
    ESTILO: TORRENTES (SSMS 22)
+   
+   ADVERTENCIA DE DESPLIEGUE:
+   Este script ejecuta una recreación destructiva (DROP DATABASE) diseñada
+   exclusivamente para instalación limpia en entornos nuevos.
+   Para actualizar una base de datos existente con datos preservados, NO USE
+   este script; utilice en su lugar el script de migración segura:
+   sql/03_administracion_mantenimiento/01_Migracion_Filegroups_Segura.sql
    ========================================================================= */
 
 USE master
@@ -23,6 +30,38 @@ ON PRIMARY
     SIZE = 3072MB,          -- 3GB inicial
     MAXSIZE = 20480MB,      -- 20GB máximo
     FILEGROWTH = 1024MB     -- Crecimiento de 1GB
+),
+FILEGROUP FG_TRANSACCIONAL
+(
+    NAME = 'ME_Transaccional',
+    FILENAME = 'C:\SQLData\ME_Transaccional.ndf',
+    SIZE = 100MB,
+    MAXSIZE = UNLIMITED,
+    FILEGROWTH = 50MB
+),
+FILEGROUP FG_DW
+(
+    NAME = 'ME_DW',
+    FILENAME = 'C:\SQLData\ME_DW.ndf',
+    SIZE = 100MB,
+    MAXSIZE = UNLIMITED,
+    FILEGROWTH = 50MB
+),
+FILEGROUP FG_AUDITORIA
+(
+    NAME = 'ME_Auditoria',
+    FILENAME = 'C:\SQLData\ME_Auditoria.ndf',
+    SIZE = 50MB,
+    MAXSIZE = UNLIMITED,
+    FILEGROWTH = 25MB
+),
+FILEGROUP FG_CATALOGOS
+(
+    NAME = 'ME_Catalogos',
+    FILENAME = 'C:\SQLData\ME_Catalogos.ndf',
+    SIZE = 25MB,
+    MAXSIZE = UNLIMITED,
+    FILEGROWTH = 10MB
 )
 LOG ON
 (

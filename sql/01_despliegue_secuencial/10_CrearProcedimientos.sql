@@ -1951,9 +1951,10 @@ GO
 -- MÓDULO 7: FACTURACIÓN, PAGOS Y CUENTAS POR COBRAR (SPs 47 a 53)
 -- =========================================================================
 
--- 47. SP_Factura_Generar
+-- 47. SP_Factura_Generar (I-10 / F6: Clave Numérica Fiscal DGT Simulada)
 CREATE OR ALTER PROCEDURE dbo.SP_Factura_Generar
     @Id_Venta INT,
+    @Clave_Numerica_Fiscal VARCHAR(50) = NULL,
     @Id_Factura_Nueva INT OUTPUT
 AS
 BEGIN
@@ -1979,11 +1980,24 @@ BEGIN
         IF @IdEstadoPendiente IS NULL SET @IdEstadoPendiente = 1;
         DECLARE @FechaVenc DATETIME = DATEADD(DAY, ISNULL(@DiasCredito, 0), GETDATE());
 
-        INSERT INTO Factura (Id_Venta, Id_Estado_Factura, Fecha_Emision, Fecha_Vencimiento, Monto_Total, Saldo_Pendiente)
-        VALUES (@Id_Venta, @IdEstadoPendiente, GETDATE(), @FechaVenc, @MontoTotal, @MontoTotal);
+        -- Generación pedagógica de clave fiscal DGT de 50 dígitos si no se suministra
+        IF @Clave_Numerica_Fiscal IS NULL OR LEN(@Clave_Numerica_Fiscal) < 50
+        BEGIN
+            DECLARE @DiaStr VARCHAR(2) = RIGHT('0' + CAST(DAY(GETDATE()) AS VARCHAR(2)), 2);
+            DECLARE @MesStr VARCHAR(2) = RIGHT('0' + CAST(MONTH(GETDATE()) AS VARCHAR(2)), 2);
+            DECLARE @AnioStr VARCHAR(2) = RIGHT(CAST(YEAR(GETDATE()) AS VARCHAR(4)), 2);
+            DECLARE @CedulaEmisor VARCHAR(12) = '003101123456'; -- Cédula jurídica simulada Mundo Escolar
+            DECLARE @Consecutivo VARCHAR(20) = '0010000101' + RIGHT('0000000000' + CAST(@Id_Venta AS VARCHAR(10)), 10);
+            DECLARE @Situacion VARCHAR(1) = '1'; -- 1=Normal DGT
+            DECLARE @CodSeguridad VARCHAR(8) = '88888888';
+            SET @Clave_Numerica_Fiscal = '506' + @DiaStr + @MesStr + @AnioStr + @CedulaEmisor + @Consecutivo + @Situacion + @CodSeguridad;
+        END
+
+        INSERT INTO Factura (Id_Venta, Id_Estado_Factura, Fecha_Emision, Fecha_Vencimiento, Monto_Total, Saldo_Pendiente, Clave_Numerica_Fiscal)
+        VALUES (@Id_Venta, @IdEstadoPendiente, GETDATE(), @FechaVenc, @MontoTotal, @MontoTotal, @Clave_Numerica_Fiscal);
 
         SET @Id_Factura_Nueva = SCOPE_IDENTITY();
-        SELECT @Id_Factura_Nueva AS Id_Factura, 'Factura emitida correctamente.' AS Mensaje;
+        SELECT @Id_Factura_Nueva AS Id_Factura, 'Factura emitida correctamente con clave fiscal simulada.' AS Mensaje;
     END TRY
     BEGIN CATCH
         THROW;
@@ -2927,7 +2941,7 @@ BEGIN
         Trimestre INT NOT NULL,
         Dia_Semana INT NOT NULL,
         Es_Fin_Semana BIT NOT NULL
-    );
+    ) ON [FG_DW];
 END
 GO
 
@@ -2945,7 +2959,7 @@ BEGIN
         Fecha_Inicio DATETIME NOT NULL,
         Fecha_Fin DATETIME NULL,
         Es_Actual BIT NOT NULL
-    );
+    ) ON [FG_DW];
 END
 GO
 
@@ -2958,7 +2972,7 @@ BEGIN
         Categoria VARCHAR(50) NOT NULL,
         Precio_Venta_Actual DECIMAL(12,2) NOT NULL,
         Estado BIT NOT NULL
-    );
+    ) ON [FG_DW];
 END
 GO
 
@@ -2970,7 +2984,7 @@ BEGIN
         Nombre_Servicio VARCHAR(100) NOT NULL,
         Precio_Base DECIMAL(12,2) NOT NULL,
         Estado BIT NOT NULL
-    );
+    ) ON [FG_DW];
 END
 GO
 
@@ -2981,7 +2995,7 @@ BEGIN
         Id_Condicion_Pago INT NOT NULL,
         Nombre VARCHAR(50) NOT NULL,
         Dias_Credito INT NOT NULL
-    );
+    ) ON [FG_DW];
 END
 GO
 
@@ -2992,7 +3006,7 @@ BEGIN
         Id_Usuario INT NOT NULL,
         Nombre_Usuario VARCHAR(50) NOT NULL,
         Rol VARCHAR(50) NOT NULL
-    );
+    ) ON [FG_DW];
 END
 GO
 
@@ -3002,7 +3016,25 @@ BEGIN
         Sk_Metodo_Pago INT IDENTITY(1,1) PRIMARY KEY,
         Id_Metodo_Pago INT NOT NULL,
         Nombre VARCHAR(50) NOT NULL
-    );
+    ) ON [FG_DW];
+END
+GO
+
+IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'DimProveedor' AND schema_id = SCHEMA_ID('dw'))
+BEGIN
+    CREATE TABLE dw.DimProveedor (
+        Sk_Proveedor INT IDENTITY(1,1) PRIMARY KEY,
+        Id_Proveedor INT NOT NULL,
+        Nombre_Empresa VARCHAR(150) NOT NULL,
+        Tipo_Proveedor VARCHAR(50) NOT NULL,
+        Numero_Identificacion VARCHAR(50) NULL,
+        Nombre_Contacto VARCHAR(100) NULL,
+        Telefono_Contacto VARCHAR(50) NULL,
+        Correo_Contacto VARCHAR(100) NULL,
+        Direccion VARCHAR(255) NULL,
+        Lead_Time_Pactado_Dias INT NOT NULL,
+        Estado VARCHAR(20) NOT NULL
+    ) ON [FG_DW];
 END
 GO
 
@@ -3017,7 +3049,7 @@ BEGIN
         Subtotal DECIMAL(12,2) NOT NULL,
         Impuesto DECIMAL(12,2) NOT NULL,
         Monto_Total DECIMAL(12,2) NOT NULL
-    );
+    ) ON [FG_DW];
 END
 GO
 
@@ -3030,8 +3062,11 @@ BEGIN
         Sk_Producto INT NOT NULL,
         Cantidad INT NOT NULL,
         Precio_Unitario DECIMAL(12,2) NOT NULL,
-        Subtotal DECIMAL(12,2) NOT NULL
-    );
+        Subtotal DECIMAL(12,2) NOT NULL,
+        Costo_Unitario DECIMAL(18,2) NOT NULL,
+        Utilidad_Bruta DECIMAL(18,2) NOT NULL,
+        Margen_Bruto_Pct DECIMAL(5,2) NOT NULL
+    ) ON [FG_DW];
 END
 GO
 
@@ -3045,7 +3080,7 @@ BEGIN
         Cantidad INT NOT NULL,
         Precio_Unitario DECIMAL(12,2) NOT NULL,
         Subtotal DECIMAL(12,2) NOT NULL
-    );
+    ) ON [FG_DW];
 END
 GO
 
@@ -3057,7 +3092,62 @@ BEGIN
         Sk_Fecha INT NOT NULL,
         Sk_Metodo_Pago INT NOT NULL,
         Monto_Pagado DECIMAL(12,2) NOT NULL
-    );
+    ) ON [FG_DW];
+END
+GO
+
+IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'FactCompras' AND schema_id = SCHEMA_ID('dw'))
+BEGIN
+    CREATE TABLE dw.FactCompras (
+        Id_Fact_Compra INT IDENTITY(1,1) PRIMARY KEY,
+        Id_Compra INT NOT NULL,
+        Id_Compra_Producto INT NOT NULL,
+        Sk_Fecha_Compra INT NOT NULL,
+        Sk_Fecha_Recepcion INT NOT NULL,
+        Sk_Proveedor INT NOT NULL,
+        Sk_Producto INT NOT NULL,
+        Cantidad_Comprada INT NOT NULL,
+        Costo_Unitario DECIMAL(18,2) NOT NULL,
+        Monto_Total_Compra DECIMAL(18,2) NOT NULL,
+        Fecha_Orden DATETIME NOT NULL,
+        Fecha_Prometida DATE NOT NULL,
+        Fecha_Recepcion_Real DATETIME NOT NULL,
+        Dias_Tardanza_Entrega INT NOT NULL,
+        Cumplio_A_Tiempo BIT NOT NULL
+    ) ON [FG_DW];
+END
+GO
+
+IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'FactInventario' AND schema_id = SCHEMA_ID('dw'))
+BEGIN
+    CREATE TABLE dw.FactInventario (
+        Id_Fact_Inventario INT IDENTITY(1,1) PRIMARY KEY,
+        Sk_Fecha INT NOT NULL,
+        Sk_Producto INT NOT NULL,
+        Stock_Final INT NOT NULL,
+        Costo_Promedio DECIMAL(18,2) NOT NULL,
+        Valor_Total_Inventario DECIMAL(18,2) NOT NULL,
+        Punto_Reorden INT NOT NULL,
+        Alerta_Reorden BIT NOT NULL,
+        Dias_Sin_Movimiento INT NOT NULL,
+        Indice_Rotacion DECIMAL(10,2) NOT NULL
+    ) ON [FG_DW];
+END
+GO
+
+-- Tabla Técnica 15 del DW: Bitácora de Cargas ETL (A-03 / I-04)
+IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'Bitacora_ETL' AND schema_id = SCHEMA_ID('dw'))
+BEGIN
+    CREATE TABLE dw.Bitacora_ETL (
+        Id_Bitacora_ETL INT IDENTITY(1,1) PRIMARY KEY,
+        Proceso VARCHAR(100) NOT NULL,
+        Fecha_Inicio DATETIME NOT NULL,
+        Fecha_Fin DATETIME NULL,
+        Estado VARCHAR(20) NOT NULL,
+        Filas_Procesadas INT NULL,
+        Mensaje_Error VARCHAR(500) NULL,
+        Duracion_Segundos INT NULL
+    ) ON [FG_DW];
 END
 GO
 
@@ -3284,7 +3374,7 @@ BEGIN
 END;
 GO
 
--- 87. SP_ETL_CargarFactVentas
+-- 87. SP_ETL_CargarFactVentas (A-01: SCD2 Point-in-Time Lookup con Fallback)
 CREATE OR ALTER PROCEDURE dbo.SP_ETL_CargarFactVentas
 AS
 BEGIN
@@ -3299,9 +3389,20 @@ BEGIN
         v.Subtotal,
         v.Impuesto,
         v.Monto_Total
-    FROM Venta v
-    INNER JOIN Estado_Venta ev ON v.Id_Estado_Venta = ev.Id_Estado_Venta
-    INNER JOIN dw.DimCliente dc ON v.Id_Cliente = dc.Id_Cliente AND dc.Es_Actual = 1
+    FROM dbo.Venta v
+    INNER JOIN dbo.Estado_Venta ev ON v.Id_Estado_Venta = ev.Id_Estado_Venta
+    CROSS APPLY (
+        SELECT TOP 1 dc_match.Sk_Cliente
+        FROM dw.DimCliente dc_match
+        WHERE dc_match.Id_Cliente = v.Id_Cliente
+          AND (
+              (v.Fecha >= dc_match.Fecha_Inicio AND (v.Fecha < dc_match.Fecha_Fin OR dc_match.Fecha_Fin IS NULL))
+              OR dc_match.Es_Actual = 1
+          )
+        ORDER BY 
+            CASE WHEN v.Fecha >= dc_match.Fecha_Inicio AND (v.Fecha < dc_match.Fecha_Fin OR dc_match.Fecha_Fin IS NULL) THEN 0 ELSE 1 END,
+            dc_match.Fecha_Inicio DESC
+    ) dc
     INNER JOIN dw.DimVendedor dv ON v.Id_Usuario = dv.Id_Usuario
     INNER JOIN dw.DimCondicionPago dcp ON v.Id_Condicion_Pago = dcp.Id_Condicion_Pago
     WHERE ev.Nombre_Estado = 'Confirmada'
@@ -3316,7 +3417,10 @@ CREATE OR ALTER PROCEDURE dbo.SP_ETL_CargarFactVentaProducto
 AS
 BEGIN
     SET NOCOUNT ON;
-    INSERT INTO dw.FactVentaProducto (Id_Venta_Producto, Id_Venta, Sk_Fecha, Sk_Producto, Cantidad, Precio_Unitario, Subtotal)
+    INSERT INTO dw.FactVentaProducto (
+        Id_Venta_Producto, Id_Venta, Sk_Fecha, Sk_Producto, Cantidad, Precio_Unitario, Subtotal,
+        Costo_Unitario, Utilidad_Bruta, Margen_Bruto_Pct
+    )
     SELECT 
         vp.Id_Venta_Producto,
         v.Id_Venta,
@@ -3324,13 +3428,36 @@ BEGIN
         dp.Sk_Producto,
         vp.Cantidad,
         vp.Precio_Unitario,
-        vp.Subtotal
-    FROM Venta_Producto vp
-    INNER JOIN Venta v ON vp.Id_Venta = v.Id_Venta
-    INNER JOIN Estado_Venta ev ON v.Id_Estado_Venta = ev.Id_Estado_Venta
+        vp.Subtotal,
+        ISNULL(pp.Precio_Compra, 0.00) AS Costo_Unitario,
+        ROUND((vp.Precio_Unitario - ISNULL(pp.Precio_Compra, 0.00)) * vp.Cantidad, 2) AS Utilidad_Bruta,
+        CASE 
+            WHEN vp.Subtotal > 0 
+            THEN ROUND(((vp.Precio_Unitario - ISNULL(pp.Precio_Compra, 0.00)) * vp.Cantidad / vp.Subtotal) * 100, 2)
+            ELSE 0.00 
+        END AS Margen_Bruto_Pct
+    FROM dbo.Venta_Producto vp
+    INNER JOIN dbo.Venta v ON vp.Id_Venta = v.Id_Venta
+    INNER JOIN dbo.Estado_Venta ev ON v.Id_Estado_Venta = ev.Id_Estado_Venta
     INNER JOIN dw.DimProducto dp ON vp.Id_Producto = dp.Id_Producto
+    LEFT JOIN dbo.Producto_Proveedor pp ON vp.Id_Producto = pp.Id_Producto AND pp.EsPrincipal = 1
     WHERE ev.Nombre_Estado = 'Confirmada'
       AND NOT EXISTS (SELECT 1 FROM dw.FactVentaProducto fvp WHERE fvp.Id_Venta_Producto = vp.Id_Venta_Producto);
+
+    -- Actualizar registros existentes si tenian NULL
+    UPDATE fvp
+    SET 
+        fvp.Costo_Unitario = ISNULL(pp.Precio_Compra, 0.00),
+        fvp.Utilidad_Bruta = ROUND((fvp.Precio_Unitario - ISNULL(pp.Precio_Compra, 0.00)) * fvp.Cantidad, 2),
+        fvp.Margen_Bruto_Pct = CASE 
+            WHEN fvp.Subtotal > 0 
+            THEN ROUND(((fvp.Precio_Unitario - ISNULL(pp.Precio_Compra, 0.00)) * fvp.Cantidad / fvp.Subtotal) * 100, 2)
+            ELSE 0.00 
+        END
+    FROM dw.FactVentaProducto fvp
+    INNER JOIN dw.DimProducto dp ON fvp.Sk_Producto = dp.Sk_Producto
+    INNER JOIN dbo.Producto_Proveedor pp ON dp.Id_Producto = pp.Id_Producto AND pp.EsPrincipal = 1
+    WHERE fvp.Costo_Unitario IS NULL;
 
     SELECT COUNT(*) AS TotalFactVentaProducto FROM dw.FactVentaProducto;
 END;
@@ -3483,7 +3610,7 @@ BEGIN
 END;
 GO
 
--- 94. SP_ETL_CargarFactCompras
+-- 94. SP_ETL_CargarFactCompras (I-09 / F4: OUTER APPLY para vinculación confiable de recepción)
 CREATE OR ALTER PROCEDURE dbo.SP_ETL_CargarFactCompras
 AS
 BEGIN
@@ -3497,7 +3624,7 @@ BEGIN
         c.Id_Compra,
         cp.Id_Compra_Producto,
         YEAR(c.Fecha_Compra) * 10000 + MONTH(c.Fecha_Compra) * 100 + DAY(c.Fecha_Compra) AS Sk_Fecha_Compra,
-        YEAR(mi.Fecha) * 10000 + MONTH(mi.Fecha) * 100 + DAY(mi.Fecha) AS Sk_Fecha_Recepcion,
+        YEAR(ISNULL(mi.Fecha, c.Fecha_Compra)) * 10000 + MONTH(ISNULL(mi.Fecha, c.Fecha_Compra)) * 100 + DAY(ISNULL(mi.Fecha, c.Fecha_Compra)) AS Sk_Fecha_Recepcion,
         dprov.Sk_Proveedor,
         dp.Sk_Producto,
         cp.Cantidad,
@@ -3505,10 +3632,11 @@ BEGIN
         cp.Subtotal,
         c.Fecha_Compra AS Fecha_Orden,
         DATEADD(DAY, dprov.Lead_Time_Pactado_Dias, CAST(c.Fecha_Compra AS DATE)) AS Fecha_Prometida,
-        mi.Fecha AS Fecha_Recepcion_Real,
-        DATEDIFF(DAY, DATEADD(DAY, dprov.Lead_Time_Pactado_Dias, CAST(c.Fecha_Compra AS DATE)), CAST(mi.Fecha AS DATE)) AS Dias_Tardanza_Entrega,
+        ISNULL(mi.Fecha, c.Fecha_Compra) AS Fecha_Recepcion_Real,
+        ISNULL(DATEDIFF(DAY, DATEADD(DAY, dprov.Lead_Time_Pactado_Dias, CAST(c.Fecha_Compra AS DATE)), CAST(mi.Fecha AS DATE)), 0) AS Dias_Tardanza_Entrega,
         CASE 
-            WHEN CAST(mi.Fecha AS DATE) <= DATEADD(DAY, dprov.Lead_Time_Pactado_Dias, CAST(c.Fecha_Compra AS DATE)) THEN 1 
+            WHEN mi.Fecha IS NOT NULL AND CAST(mi.Fecha AS DATE) <= DATEADD(DAY, dprov.Lead_Time_Pactado_Dias, CAST(c.Fecha_Compra AS DATE)) THEN 1 
+            WHEN mi.Fecha IS NULL THEN 1
             ELSE 0 
         END AS Cumplio_A_Tiempo
     FROM dbo.Compra c
@@ -3516,7 +3644,7 @@ BEGIN
     INNER JOIN dbo.Estado_Compra ec ON c.Id_Estado_Compra = ec.Id_Estado_Compra
     INNER JOIN dw.DimProveedor dprov ON c.Id_Proveedor = dprov.Id_Proveedor
     INNER JOIN dw.DimProducto dp ON cp.Id_Producto = dp.Id_Producto
-    CROSS APPLY (
+    OUTER APPLY (
         SELECT TOP 1 Fecha 
         FROM dbo.Movimiento_Inventario mi 
         WHERE mi.Id_Producto = cp.Id_Producto 
@@ -3531,7 +3659,7 @@ BEGIN
 END;
 GO
 
--- 95. SP_ETL_CargarFactInventario
+-- 95. SP_ETL_CargarFactInventario (I-09 / F5: Reconstrucción Retroactiva de Stock Histórico)
 CREATE OR ALTER PROCEDURE dbo.SP_ETL_CargarFactInventario
     @FechaCorte DATE = NULL
 AS
@@ -3551,33 +3679,154 @@ BEGIN
     SELECT 
         @SkFecha AS Sk_Fecha,
         dp.Sk_Producto,
-        p.Stock_Actual AS Stock_Final,
+        -- Cálculo retroactivo de stock histórico al corte: restando entradas posteriores y sumando salidas posteriores
+        CASE 
+            WHEN (p.Stock_Actual + ISNULL(movPost.AjustePosterior, 0)) < 0 THEN 0 
+            ELSE (p.Stock_Actual + ISNULL(movPost.AjustePosterior, 0)) 
+        END AS Stock_Final,
         ISNULL(pp.Precio_Compra, 0.00) AS Costo_Promedio,
-        ROUND(p.Stock_Actual * ISNULL(pp.Precio_Compra, 0.00), 2) AS Valor_Total_Inventario,
+        ROUND(
+            CASE 
+                WHEN (p.Stock_Actual + ISNULL(movPost.AjustePosterior, 0)) < 0 THEN 0 
+                ELSE (p.Stock_Actual + ISNULL(movPost.AjustePosterior, 0)) 
+            END * ISNULL(pp.Precio_Compra, 0.00), 
+            2
+        ) AS Valor_Total_Inventario,
         p.Punto_Reorden,
-        CASE WHEN p.Stock_Actual <= p.Punto_Reorden THEN 1 ELSE 0 END AS Alerta_Reorden,
+        CASE 
+            WHEN (p.Stock_Actual + ISNULL(movPost.AjustePosterior, 0)) <= p.Punto_Reorden THEN 1 
+            ELSE 0 
+        END AS Alerta_Reorden,
         ISNULL(DATEDIFF(DAY, ultVenta.UltimaFecha, @FechaCorte), 30) AS Dias_Sin_Movimiento,
         CASE 
-            WHEN p.Stock_Actual > 0 
-            THEN ROUND(CAST(ISNULL(ventasTot.CantidadVendida, 0) AS DECIMAL(10,2)) / CAST(p.Stock_Actual AS DECIMAL(10,2)), 2)
+            WHEN (p.Stock_Actual + ISNULL(movPost.AjustePosterior, 0)) > 0 
+            THEN ROUND(CAST(ISNULL(ventasTot.CantidadVendida, 0) AS DECIMAL(10,2)) / CAST((p.Stock_Actual + ISNULL(movPost.AjustePosterior, 0)) AS DECIMAL(10,2)), 2)
             ELSE CAST(ISNULL(ventasTot.CantidadVendida, 0) AS DECIMAL(10,2))
         END AS Indice_Rotacion
     FROM dbo.Producto p
     INNER JOIN dw.DimProducto dp ON p.Id_Producto = dp.Id_Producto
     LEFT JOIN dbo.Producto_Proveedor pp ON p.Id_Producto = pp.Id_Producto AND pp.EsPrincipal = 1
     OUTER APPLY (
+        -- Movimientos netos ocurridos estrictamente DESPUÉS de la fecha de corte
+        SELECT 
+            SUM(
+                CASE 
+                    WHEN mi.Id_Tipo_Movimiento IN (1, 3, 5) THEN -mi.Cantidad -- Entradas posteriores se restan
+                    WHEN mi.Id_Tipo_Movimiento IN (2, 4, 6) THEN mi.Cantidad  -- Salidas posteriores se reponen
+                    ELSE 0 
+                END
+            ) AS AjustePosterior
+        FROM dbo.Movimiento_Inventario mi
+        WHERE mi.Id_Producto = p.Id_Producto
+          AND mi.Fecha > DATEADD(SECOND, 86399, CAST(@FechaCorte AS DATETIME))
+    ) movPost
+    OUTER APPLY (
         SELECT MAX(v.Fecha) AS UltimaFecha
         FROM dbo.Venta v
         INNER JOIN dbo.Venta_Producto vp ON v.Id_Venta = vp.Id_Venta
         WHERE vp.Id_Producto = p.Id_Producto
+          AND CAST(v.Fecha AS DATE) <= @FechaCorte
     ) ultVenta
     OUTER APPLY (
         SELECT SUM(vp.Cantidad) AS CantidadVendida
         FROM dbo.Venta_Producto vp
         WHERE vp.Id_Producto = p.Id_Producto
+          AND CAST(v.Fecha AS DATE) <= @FechaCorte
     ) ventasTot
     WHERE p.Estado = 1;
 
     SELECT COUNT(*) AS TotalSnapshotsInventario FROM dw.FactInventario WHERE Sk_Fecha = @SkFecha;
+END;
+GO
+
+-- =========================================================================
+-- 96. SP_ETL_OrquestarCargaCompleta (I-02 / I-06 / A-03)
+-- Orquestador maestro integral del Data Warehouse con registro en Bitacora_ETL
+-- =========================================================================
+CREATE OR ALTER PROCEDURE dbo.SP_ETL_OrquestarCargaCompleta
+    @AnioInicio INT = 2024,
+    @AnioFin INT = 2030,
+    @FechaCorteInventario DATE = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DECLARE @Inicio DATETIME = GETDATE();
+    DECLARE @IdBitacora INT;
+    DECLARE @TotalFilas INT = 0;
+
+    -- Registrar inicio de la orquestación en Bitácora ETL
+    INSERT INTO dw.Bitacora_ETL (Proceso, Fecha_Inicio, Estado)
+    VALUES ('SP_ETL_OrquestarCargaCompleta', @Inicio, 'EN_PROCESO');
+    SET @IdBitacora = SCOPE_IDENTITY();
+
+    BEGIN TRY
+        -- FASE 1: Carga de Dimensiones Independientes y Temporales
+        EXEC dbo.SP_ETL_CargarDimFecha @AnioInicio = @AnioInicio, @AnioFin = @AnioFin;
+        EXEC dbo.SP_ETL_CargarDimCliente;
+        EXEC dbo.SP_ETL_CargarDimProducto;
+        EXEC dbo.SP_ETL_CargarDimServicio;
+        EXEC dbo.SP_ETL_CargarDimCondicionPago;
+        EXEC dbo.SP_ETL_CargarDimVendedor;
+        EXEC dbo.SP_ETL_CargarDimMetodoPago;
+        EXEC dbo.SP_ETL_CargarDimProveedor;
+
+        -- FASE 2: Carga de Hechos Transaccionales y Analíticos
+        EXEC dbo.SP_ETL_CargarFactVentas;
+        EXEC dbo.SP_ETL_CargarFactVentaProducto;
+        EXEC dbo.SP_ETL_CargarFactVentaServicio;
+        EXEC dbo.SP_ETL_CargarFactPagos;
+        EXEC dbo.SP_ETL_CargarFactCompras;
+        EXEC dbo.SP_ETL_CargarFactInventario @FechaCorte = @FechaCorteInventario;
+
+        -- Conteo consolidado de registros en tablas de hechos
+        SELECT @TotalFilas = 
+            (SELECT COUNT(*) FROM dw.FactVentas) +
+            (SELECT COUNT(*) FROM dw.FactVentaProducto) +
+            (SELECT COUNT(*) FROM dw.FactVentaServicio) +
+            (SELECT COUNT(*) FROM dw.FactPagos) +
+            (SELECT COUNT(*) FROM dw.FactCompras) +
+            (SELECT COUNT(*) FROM dw.FactInventario);
+
+        -- Registrar finalización exitosa
+        UPDATE dw.Bitacora_ETL
+        SET Fecha_Fin = GETDATE(),
+            Estado = 'EXITOSO',
+            Filas_Procesadas = @TotalFilas,
+            Duracion_Segundos = DATEDIFF(SECOND, @Inicio, GETDATE())
+        WHERE Id_Bitacora_ETL = @IdBitacora;
+
+        -- Retornar el registro de bitácora resultante
+        SELECT 
+            Id_Bitacora_ETL,
+            Proceso,
+            Fecha_Inicio,
+            Fecha_Fin,
+            Estado,
+            Filas_Procesadas,
+            Duracion_Segundos,
+            'Proceso ETL orquestado completado con éxito.' AS Mensaje
+        FROM dw.Bitacora_ETL
+        WHERE Id_Bitacora_ETL = @IdBitacora;
+
+    END TRY
+    BEGIN CATCH
+        DECLARE @ErrorMsg VARCHAR(500) = ERROR_MESSAGE();
+        DECLARE @ErrorSeverity INT = ERROR_SEVERITY();
+        DECLARE @ErrorState INT = ERROR_STATE();
+
+        IF @@TRANCOUNT > 0
+            ROLLBACK TRANSACTION;
+
+        -- Registro autónomo del fallo fuera de la transacción para auditoría persistente
+        UPDATE dw.Bitacora_ETL
+        SET Fecha_Fin = GETDATE(),
+            Estado = 'FALLIDO',
+            Mensaje_Error = @ErrorMsg,
+            Duracion_Segundos = DATEDIFF(SECOND, @Inicio, GETDATE())
+        WHERE Id_Bitacora_ETL = @IdBitacora;
+
+        RAISERROR(@ErrorMsg, @ErrorSeverity, @ErrorState);
+        RETURN;
+    END CATCH
 END;
 GO

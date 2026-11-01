@@ -78,6 +78,13 @@ IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_ProductoProveedor_Prod
     INCLUDE (Precio_Compra, EsPrincipal);
 GO
 
+-- Restricción UNIQUE filtrada: Un producto solo puede tener un único proveedor principal activo (F3 / QA17)
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'UQ_ProductoProveedor_PrincipalActivo' AND object_id = OBJECT_ID('dbo.Producto_Proveedor'))
+    CREATE UNIQUE NONCLUSTERED INDEX UQ_ProductoProveedor_PrincipalActivo 
+    ON dbo.Producto_Proveedor (Id_Producto) 
+    WHERE EsPrincipal = 1 AND Estado = 1;
+GO
+
 -- Seguridad y Auditoría
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_Bitacora_Usuario_Fecha' AND object_id = OBJECT_ID('dbo.Bitacora'))
     CREATE NONCLUSTERED INDEX IX_Bitacora_Usuario_Fecha ON dbo.Bitacora (Id_Usuario, Fecha_Hora)

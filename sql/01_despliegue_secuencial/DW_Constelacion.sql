@@ -3,8 +3,26 @@
    ARCHIVO: DW_Constelacion.sql (MODELO DIMENSIONAL Y DATA WAREHOUSE)
    ESTILO: TORRENTES (SSMS 22)
    REFERENCIA DOCUMENTACIÓN: Capítulos 16 y 17.9 (Scripts DW_01 a DW_11)
-   DESCRIPCIÓN: 
-     Implementación completa del Data Warehouse con esquema de Constelación:
+   
+   =========================================================================
+   NOTA DE ARQUITECTURA / AVISO DE REFERENCIA HISTÓRICA (LEGACY):
+   Este script representa el diseño preliminar del Data Warehouse en una base
+   de datos independiente (DW_MundoEscolar).
+   
+   ARQUITECTURA CANÓNICA OFICIAL DE PRODUCCIÓN (TORRENTES / MUNDO ESCOLAR):
+   El Data Warehouse oficial y canónico del proyecto reside dentro de la base de
+   datos principal `MUNDO_ESCOLAR`, encapsulado en el esquema dimensional `dw`
+   y alojado físicamente en el Filegroup dedicado `FG_DW`.
+   Dicha arquitectura canónica se despliega de forma secuencial a través de:
+     - sql/01_despliegue_secuencial/02_CrearEsquemas.sql (CREATE SCHEMA dw)
+     - sql/01_despliegue_secuencial/10_CrearProcedimientos.sql (DDL y SPs ETL 80-95)
+     - sql/01_despliegue_secuencial/14_MotorSensibilidadWhatIf.sql (dw.FN_SimularImpactoFinanciero)
+   
+   Este archivo se conserva exclusivamente como documento histórico de referencia
+   y comparativa teórica de esquemas en constelación (Requerimiento H1 / R3).
+   =========================================================================
+   DESCRIPCIÓN ORIGINAL: 
+     Implementación del Data Warehouse con esquema de Constelación:
        - 7 Dimensiones: DimFecha, DimCliente, DimProducto, DimServicio, 
                         DimVendedor, DimCondicionPago, DimMetodoPago
        - 4 Tablas de Hechos: FactVenta, FactVentaProducto, 

@@ -1,9 +1,10 @@
 // ============================================================================
 // PROYECTO: LIBRERÍA Y PAPELERÍA MUNDO ESCOLAR
-// ARCHIVO: Medidas_DAX_PowerBI.dax (FASE 6)
+// ARCHIVO: Medidas_DAX_PowerBI.dax (FASE 6: MODELADO Y SENSIBILIDAD HOMOLOGADA)
 // Destinatario: Lic. / Prof. Torrentes
 // Propósito: Diccionario completo de Parámetros What-If, Medidas Financieras,
 //            Sensibilidad de Márgenes, Abastecimiento e Inventario en Power BI.
+// Homologación: Columnas y cálculos 100% conciliados con el esquema MUNDO_ESCOLAR.dw
 // ============================================================================
 
 // ============================================================================
@@ -40,23 +41,31 @@ SELECTEDVALUE(Par_Inflacion_Costos[Value], 0.0)
 
 
 // ============================================================================
-// 3. MEDIDAS FINANCIERAS HISTÓRICAS (ELIMINACIÓN DE LA ILUSIÓN DEL 100%)
+// 3. MEDIDAS FINANCIERAS HISTÓRICAS (CONCILIADAS CON SQL SERVER AL 36.85%)
 // ============================================================================
 
-Ventas_Totales = 
+// Ventas brutas totales de facturación (incluye servicios e IVA)
+Ventas_Totales_Facturadas = 
 SUM(dw_FactVentas[Monto_Total])
 
-Costo_Total_Historico = 
+// Ventas netas de mercadería (Base imponible de productos para costeo comercial)
+Ventas_Netas_Mercaderia = 
+SUM(dw_FactVentaProducto[Subtotal])
+
+// Costo total de adquisición de mercadería vendida (COGS)
+Costo_Total_Mercaderia = 
 SUMX(
     dw_FactVentaProducto,
     dw_FactVentaProducto[Cantidad] * dw_FactVentaProducto[Costo_Unitario]
 )
 
-Utilidad_Bruta_Historica = 
-[Ventas_Totales] - [Costo_Total_Historico]
+// Utilidad bruta real en productos vendidos
+Utilidad_Bruta_Mercaderia = 
+[Ventas_Netas_Mercaderia] - [Costo_Total_Mercaderia]
 
-Margen_Bruto_Historico_Pct = 
-DIVIDE([Utilidad_Bruta_Historica], [Ventas_Totales], 0)
+// Margen comercial bruto histórico (Conciliado exactamente al 36.85%)
+Margen_Bruto_Mercaderia_Pct = 
+DIVIDE([Utilidad_Bruta_Mercaderia], [Ventas_Netas_Mercaderia], 0)
 
 
 // ============================================================================
@@ -67,57 +76,64 @@ Costo_Simulado_Total =
 VAR FactorDesc = 1 - [Tasa_Descuento_Seleccionada]
 VAR FactorInf = 1 + [Tasa_Inflacion_Seleccionada]
 RETURN
-[Costo_Total_Historico] * FactorDesc * FactorInf
+[Costo_Total_Mercaderia] * FactorDesc * FactorInf
 
 Ganancia_Neta_Simulada = 
-[Ventas_Totales] - [Costo_Simulado_Total]
+[Ventas_Netas_Mercaderia] - [Costo_Simulado_Total]
 
 Margen_Bruto_Simulado_Pct = 
-DIVIDE([Ganancia_Neta_Simulada], [Ventas_Totales], 0)
+DIVIDE([Ganancia_Neta_Simulada], [Ventas_Netas_Mercaderia], 0)
 
 Variacion_Utilidad_Colones = 
-[Ganancia_Neta_Simulada] - [Utilidad_Bruta_Historica]
+[Ganancia_Neta_Simulada] - [Utilidad_Bruta_Mercaderia]
 
 Variacion_Margen_Puntos = 
-([Margen_Bruto_Simulado_Pct] - [Margen_Bruto_Historico_Pct]) * 100
+([Margen_Bruto_Simulado_Pct] - [Margen_Bruto_Mercaderia_Pct]) * 100
 
 
 // ============================================================================
-// 5. MEDIDAS DE CADENA DE SUMINISTRO Y PROVEEDORES (dw.FactCompras)
+// 5. MEDIDAS DE CADENA DE SUMINISTRO Y PROVEEDORES (dw.FactCompras / dw.DimProveedor)
 // ============================================================================
 
-Lead_Time_Promedio_Dias = 
-AVERAGE(dw_FactCompras[Lead_Time_Dias])
+// Lead Time promedio pactado según catálogo de proveedores
+Lead_Time_Pactado_Promedio = 
+AVERAGE(dw_DimProveedor[Lead_Time_Pactado_Dias])
 
+// Tasa de cumplimiento de entregas a tiempo
 Tasa_Cumplimiento_Proveedor = 
 DIVIDE(
-    CALCULATE(COUNTROWS(dw_FactCompras), dw_FactCompras[Dias_Demora] = 0),
+    CALCULATE(COUNTROWS(dw_FactCompras), dw_FactCompras[Cumplio_A_Tiempo] = 1),
     COUNTROWS(dw_FactCompras),
     0
 )
 
-Total_Dias_Demora = 
-SUM(dw_FactCompras[Dias_Demora])
+// Días de retraso acumulados en recepción de pedidos
+Total_Dias_Tardanza_Entrega = 
+SUM(dw_FactCompras[Dias_Tardanza_Entrega])
 
+// Cantidad de órdenes que experimentaron retraso en entrega
 Ordenes_Con_Retraso = 
-CALCULATE(COUNTROWS(dw_FactCompras), dw_FactCompras[Dias_Demora] > 0)
+CALCULATE(COUNTROWS(dw_FactCompras), dw_FactCompras[Dias_Tardanza_Entrega] > 0)
 
 
 // ============================================================================
 // 6. MEDIDAS DE INVENTARIO Y CAPITAL INMOVILIZADO (dw.FactInventario)
 // ============================================================================
 
+// Valor total del inventario valorizado al costo promedio pactado
 Capital_Inmovilizado_Total = 
-SUM(dw_FactInventario[Costo_Total_Inventario])
+SUM(dw_FactInventario[Valor_Total_Inventario])
 
+// Cantidad de artículos con existencias en o por debajo del punto de reorden
 Productos_Stock_Critico = 
 CALCULATE(
     COUNTROWS(dw_FactInventario),
     dw_FactInventario[Alerta_Reorden] = 1
 )
 
+// Capital inmovilizado en productos con alerta de reorden
 Capital_En_Riesgo_Desabastecimiento = 
 CALCULATE(
-    SUM(dw_FactInventario[Costo_Total_Inventario]),
+    SUM(dw_FactInventario[Valor_Total_Inventario]),
     dw_FactInventario[Alerta_Reorden] = 1
 )

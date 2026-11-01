@@ -44,11 +44,6 @@ export class CrearClienteParticularDto {
   @MaxLength(200)
   direccion?: string;
 
-  @ApiPropertyOptional({ description: 'ID de usuario opcional para el cliente (1:1 con Usuario)', example: 1 })
-  @IsInt()
-  @IsOptional()
-  idUsuario?: number;
-
   @ApiPropertyOptional({ example: 'cli.alejandro', maxLength: 50 })
   @IsString()
   @IsOptional()
@@ -104,11 +99,6 @@ export class CrearClienteInstitucionalDto {
   @IsOptional()
   @MaxLength(200)
   direccion?: string;
-
-  @ApiPropertyOptional({ description: 'ID de usuario opcional para el cliente institucional', example: 1 })
-  @IsInt()
-  @IsOptional()
-  idUsuario?: number;
 
   @ApiPropertyOptional({ example: 'inst.liceo', maxLength: 50 })
   @IsString()

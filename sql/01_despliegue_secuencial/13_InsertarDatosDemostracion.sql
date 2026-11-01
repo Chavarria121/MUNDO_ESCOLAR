@@ -553,7 +553,7 @@ BEGIN TRY
     -- VENTA 13: 2026-10-24 15:00:00 | Cliente 14 - Contado (Efectivo)
     -- =============================================================
     INSERT INTO dbo.Venta (Id_Cliente, Id_Usuario, Id_Estado_Venta, Id_Condicion_Pago, Fecha, Subtotal, Impuesto, Monto_Total)
-    VALUES (14, @IdVendedor, 2, 1, '2026-10-24 15:00:00', 37450.00, 4868.50, 42318.50);
+    VALUES (14, @IdVendedor, 2, 1, '2026-10-24 15:00:00', 37500.00, 4875.00, 42375.00);
     SET @VentaId = SCOPE_IDENTITY();
 
     INSERT INTO dbo.Venta_Producto (Id_Producto, Id_Venta, Cantidad, Precio_Unitario, Subtotal)
@@ -573,10 +573,10 @@ BEGIN TRY
     UPDATE dbo.Producto SET Stock_Actual = Stock_Actual - 3 WHERE Id_Producto = 10;
 
     INSERT INTO dbo.Factura (Id_Venta, Id_Estado_Factura, Fecha_Emision, Fecha_Vencimiento, Monto_Total, Saldo_Pendiente)
-    VALUES (@VentaId, 3, '2026-10-24 15:00:00', '2026-10-24 15:00:00', 42318.50, 0.00);
+    VALUES (@VentaId, 3, '2026-10-24 15:00:00', '2026-10-24 15:00:00', 42375.00, 0.00);
 
     INSERT INTO dbo.Pago (Id_Factura, Id_Metodo_Pago, Fecha_Pago, Monto_Pagado, Numero_Referencia, Estado)
-    VALUES (SCOPE_IDENTITY(), 1, '2026-10-24 15:00:00', 42318.50, 'EFEC-CASH-003', 1);
+    VALUES (SCOPE_IDENTITY(), 1, '2026-10-24 15:00:00', 42375.00, 'EFEC-CASH-003', 1);
 
     -- =============================================================
     -- VENTA 14: 2026-10-25 10:45:00 | Cliente 15 - Contado (Tarjeta Débito)

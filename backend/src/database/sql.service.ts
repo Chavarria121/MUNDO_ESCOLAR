@@ -36,21 +36,23 @@ export class SqlService implements OnModuleInit, OnModuleDestroy {
   async obtenerPool(): Promise<sql.ConnectionPool> {
     if (this.pool && this.pool.connected) return this.pool;
 
-    const host = this.config.get<string>('database.host', 'localhost');
+    const server = this.config.get<string>('database.server', 'localhost');
     const port = this.config.get<number>('database.port', 1433);
     const user = this.config.get<string>('database.user', 'sa');
-    const password = this.config.get<string>('database.password', 'MundoEscolar2026*');
-    const database = this.config.get<string>('database.database', 'MUNDO_ESCOLAR');
+    const password = this.config.get<string>('database.password', '');
+    const database = this.config.get<string>('database.name', 'MUNDO_ESCOLAR');
+    const encrypt = this.config.get<boolean>('database.encrypt', false);
+    const trustServerCertificate = this.config.get<boolean>('database.trustServerCertificate', true);
 
     const configSql: sql.config = {
-      server: host,
+      server,
       port,
       user,
       password,
       database,
       options: {
-        encrypt: false,
-        trustServerCertificate: true,
+        encrypt,
+        trustServerCertificate,
         enableArithAbort: true,
       },
       pool: {
@@ -60,7 +62,7 @@ export class SqlService implements OnModuleInit, OnModuleDestroy {
       },
     };
 
-    this.logger.log(`Conectando a SQL Server en ${host}:${port}/${database} con usuario ${user}...`);
+    this.logger.log(`Conectando a SQL Server en ${server}:${port}/${database} con usuario ${user}...`);
     this.pool = await new sql.ConnectionPool(configSql).connect();
     this.logger.log('Pool de SQL Server listo y saludable');
     return this.pool;

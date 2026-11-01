@@ -7,6 +7,15 @@ export class GenerarFacturaDto {
   @IsInt()
   @Min(1)
   idVenta: number;
+
+  @ApiPropertyOptional({
+    example: '50624102600310112345600100001010000000013199999999',
+    description: 'Clave numérica fiscal de 50 dígitos (DGT Costa Rica - Simulación pedagógica F6 / I-10)',
+  })
+  @IsString()
+  @IsOptional()
+  @MaxLength(50)
+  claveNumericaFiscal?: string;
 }
 
 export class AnularFacturaDto {

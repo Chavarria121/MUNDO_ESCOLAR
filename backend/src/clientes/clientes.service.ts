@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { ConflictException, Injectable } from '@nestjs/common';
 import { SqlService } from '../database/sql.service';
 import { hashContrasena } from '../auth/password.util';
 import {
@@ -118,59 +118,38 @@ export class ClientesService {
     });
   }
 
-    async crearParticular(dto: CrearClienteParticularDto, idEjecutor: number) {
-    let idUsuarioCliente = dto.idUsuario;
-    if (!idUsuarioCliente) {
-      const num = dto.identificacion.replace(/[^0-9]/g, '');
-      const nomUser = (dto.nombreUsuario && dto.nombreUsuario.trim()) || ('cli.' + num);
-      const correoUser = (dto.correo && dto.correo.trim()) || (nomUser + '@mundoescolar.cr');
-      const passPlano = (dto.contrasena && dto.contrasena.trim()) || 'Cliente2026!';
+  async crearParticular(dto: CrearClienteParticularDto, idEjecutor: number | null = null) {
+    const num = dto.identificacion.replace(/[^0-9]/g, '');
+    const nomUser = (dto.nombreUsuario && dto.nombreUsuario.trim()) || ('cli.' + num);
+    const correoUser = (dto.correo && dto.correo.trim()) || (nomUser + '@mundoescolar.cr');
+    const passPlano = (dto.contrasena && dto.contrasena.trim()) || 'Cliente2026!';
 
-      // 1. Verificar si el usuario ya existe en Usuario
-      const existentes = await this.sql.consultarQuery<{ Id_Usuario: number; Vinculado: number }>(
-        `SELECT u.Id_Usuario, (SELECT COUNT(1) FROM Cliente c WHERE c.Id_Usuario = u.Id_Usuario) AS Vinculado
-         FROM Usuario u WHERE u.Nombre_Usuario = @nom OR u.Correo = @correo`,
-        { nom: nomUser, correo: correoUser },
+    // 1. Verificar si el usuario o correo ya existe en Usuario
+    const existentes = await this.sql.consultarQuery<{ Id_Usuario: number; Nombre_Usuario: string; Correo: string }>(
+      `SELECT u.Id_Usuario, u.Nombre_Usuario, u.Correo
+       FROM Usuario u WHERE u.Nombre_Usuario = @nom OR u.Correo = @correo`,
+      { nom: nomUser, correo: correoUser },
+    );
+
+    if (existentes && existentes.length > 0) {
+      throw new ConflictException(
+        'El nombre de usuario o correo electrónico ya se encuentra registrado. Inicie sesión para vincular su cuenta.',
       );
-
-      if (existentes && existentes.length > 0) {
-        if (existentes[0].Vinculado === 0) {
-          idUsuarioCliente = existentes[0].Id_Usuario;
-          if (dto.contrasena && dto.contrasena.trim()) {
-            await this.sql.consultarQuery(
-              `UPDATE Usuario SET Contrasena = @hash WHERE Id_Usuario = @id`,
-              { hash: hashContrasena(passPlano), id: idUsuarioCliente },
-            );
-          }
-        } else {
-          // Generar sufijo único para evitar colisión de UQ_Cliente_Usuario
-          const rnd = Math.floor(1000 + Math.random() * 9000);
-          const nomUserNuevo = `cli.${num}.${rnd}`;
-          const user = await this.sql.ejecutarSP(
-            'SP_Usuario_Crear',
-            {
-              Nombre_Usuario: nomUserNuevo,
-              Correo: `${nomUserNuevo}@mundoescolar.cr`,
-              ContrasenaHash: hashContrasena(passPlano),
-            },
-            { idUsuario: idEjecutor, salidas: { Id_Usuario_Nuevo: 'int' } },
-          );
-          idUsuarioCliente = user.filas[0]?.Id_Usuario ?? user.salida?.Id_Usuario_Nuevo;
-        }
-      } else {
-        const user = await this.sql.ejecutarSP(
-          'SP_Usuario_Crear',
-          {
-            Nombre_Usuario: nomUser,
-            Correo: correoUser,
-            ContrasenaHash: hashContrasena(passPlano),
-          },
-          { idUsuario: idEjecutor, salidas: { Id_Usuario_Nuevo: 'int' } },
-        );
-        idUsuarioCliente = user.filas[0]?.Id_Usuario ?? user.salida?.Id_Usuario_Nuevo;
-      }
     }
 
+    // 2. Crear usuario asociado de manera segura
+    const user = await this.sql.ejecutarSP(
+      'SP_Usuario_Crear',
+      {
+        Nombre_Usuario: nomUser,
+        Correo: correoUser,
+        ContrasenaHash: hashContrasena(passPlano),
+      },
+      { idUsuario: idEjecutor, salidas: { Id_Usuario_Nuevo: 'int' } },
+    );
+    const idUsuarioCliente = user.filas[0]?.Id_Usuario ?? user.salida?.Id_Usuario_Nuevo;
+
+    // 3. Crear perfil de cliente particular
     const r = await this.sql.ejecutarSP(
       'SP_Cliente_CrearPerfil',
       {
@@ -188,52 +167,38 @@ export class ClientesService {
     return r.filas[0] ?? { Id_Cliente: r.salida.Id_Cliente_Nuevo };
   }
 
-    async crearInstitucional(dto: CrearClienteInstitucionalDto, idEjecutor: number) {
-    const idAdmin = idEjecutor || 1;
-    let idUsuarioCliente = dto.idUsuario;
-    if (!idUsuarioCliente) {
-      const num = dto.cedulaJuridica.replace(/[^0-9]/g, '');
-      const nomUser = (dto.nombreUsuario && dto.nombreUsuario.trim()) || ('inst.' + num);
-      const correoUser = (dto.correoContacto && dto.correoContacto.trim()) || (nomUser + '@mundoescolar.cr');
-      const passPlano = (dto.contrasena && dto.contrasena.trim()) || 'Cliente2026!';
+  async crearInstitucional(dto: CrearClienteInstitucionalDto, idEjecutor: number | null = null) {
+    const num = dto.cedulaJuridica.replace(/[^0-9]/g, '');
+    const nomUser = (dto.nombreUsuario && dto.nombreUsuario.trim()) || ('inst.' + num);
+    const correoUser = (dto.correoContacto && dto.correoContacto.trim()) || (nomUser + '@mundoescolar.cr');
+    const passPlano = (dto.contrasena && dto.contrasena.trim()) || 'Cliente2026!';
 
-      const existentes = await this.sql.consultarQuery<{ Id_Usuario: number; Vinculado: number }>(
-        `SELECT u.Id_Usuario, (SELECT COUNT(1) FROM Cliente c WHERE c.Id_Usuario = u.Id_Usuario) AS Vinculado
-         FROM Usuario u WHERE u.Nombre_Usuario = @nom OR u.Correo = @correo`,
-        { nom: nomUser, correo: correoUser },
+    // 1. Verificar si el usuario o correo ya existe en Usuario
+    const existentes = await this.sql.consultarQuery<{ Id_Usuario: number; Nombre_Usuario: string; Correo: string }>(
+      `SELECT u.Id_Usuario, u.Nombre_Usuario, u.Correo
+       FROM Usuario u WHERE u.Nombre_Usuario = @nom OR u.Correo = @correo`,
+      { nom: nomUser, correo: correoUser },
+    );
+
+    if (existentes && existentes.length > 0) {
+      throw new ConflictException(
+        'El nombre de usuario o correo electrónico ya se encuentra registrado. Inicie sesión para vincular su cuenta institucional.',
       );
-
-      if (existentes && existentes.length > 0) {
-        if (existentes[0].Vinculado === 0) {
-          idUsuarioCliente = existentes[0].Id_Usuario;
-        } else {
-          const rnd = Math.floor(1000 + Math.random() * 9000);
-          const nomUserNuevo = `inst.${num}.${rnd}`;
-          const user = await this.sql.ejecutarSP(
-            'SP_Usuario_Crear',
-            {
-              Nombre_Usuario: nomUserNuevo,
-              Correo: `${nomUserNuevo}@mundoescolar.cr`,
-              ContrasenaHash: hashContrasena(passPlano),
-            },
-            { idUsuario: idEjecutor, salidas: { Id_Usuario_Nuevo: 'int' } },
-          );
-          idUsuarioCliente = user.filas[0]?.Id_Usuario ?? user.salida?.Id_Usuario_Nuevo;
-        }
-      } else {
-        const user = await this.sql.ejecutarSP(
-          'SP_Usuario_Crear',
-          {
-            Nombre_Usuario: nomUser,
-            Correo: correoUser,
-            ContrasenaHash: hashContrasena(passPlano),
-          },
-          { idUsuario: idEjecutor, salidas: { Id_Usuario_Nuevo: 'int' } },
-        );
-        idUsuarioCliente = user.filas[0]?.Id_Usuario ?? user.salida?.Id_Usuario_Nuevo;
-      }
     }
 
+    // 2. Crear usuario asociado de manera segura
+    const user = await this.sql.ejecutarSP(
+      'SP_Usuario_Crear',
+      {
+        Nombre_Usuario: nomUser,
+        Correo: correoUser,
+        ContrasenaHash: hashContrasena(passPlano),
+      },
+      { idUsuario: idEjecutor, salidas: { Id_Usuario_Nuevo: 'int' } },
+    );
+    const idUsuarioCliente = user.filas[0]?.Id_Usuario ?? user.salida?.Id_Usuario_Nuevo;
+
+    // 3. Crear perfil de cliente institucional
     const r = await this.sql.ejecutarSP(
       'SP_Cliente_CrearPerfil',
       {

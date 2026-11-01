@@ -56,15 +56,17 @@ export class BiService {
   }
 
   async ejecutarCargaCompleta(dto: CargarDimFechaDto) {
-    this.logger.log('Iniciando ejecución completa de ETL de Constelación...');
-    await this.cargarDimFecha(dto);
-    const dimensiones = await this.cargarDimensiones();
-    const hechos = await this.cargarHechos();
+    this.logger.log('Iniciando ejecución completa de ETL de Constelación mediante SP maestro (I-06)...');
+    const res = await this.sql.ejecutarSP<any>('SP_ETL_OrquestarCargaCompleta', {
+      AnioInicio: dto?.anioInicio ?? 2024,
+      AnioFin: dto?.anioFin ?? 2030,
+      FechaCorteInventario: null,
+    });
+    const bitacora = res.recordsets[res.recordsets.length - 1]?.[0] ?? null;
     const conciliacion = await this.validarConciliacion();
     return {
-      mensaje: 'Proceso ETL de Constelación completado exitosamente.',
-      dimensiones,
-      hechos,
+      mensaje: 'Proceso ETL de Constelación completado exitosamente mediante orquestador maestro (SP #96).',
+      bitacora,
       conciliacion,
     };
   }
