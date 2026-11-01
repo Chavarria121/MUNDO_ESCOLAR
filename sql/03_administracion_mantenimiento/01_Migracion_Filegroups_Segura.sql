@@ -281,6 +281,10 @@ LEFT JOIN sys.filegroups fg ON df.data_space_id = fg.data_space_id
 ORDER BY df.file_id;
 GO
 
+-- Habilitación de TRUSTWORTHY para procedimientos de mantenimiento con EXECUTE AS OWNER
+ALTER DATABASE MUNDO_ESCOLAR SET TRUSTWORTHY ON;
+PRINT '-> TRUSTWORTHY habilitado en MUNDO_ESCOLAR para procedimientos DBA con EXECUTE AS OWNER.';
+
 PRINT '=========================================================================';
 PRINT '   MIGRACIÓN SEGURA DE FILEGROUPS COMPLETADA SIN PERDIDA DE DATOS';
 PRINT '=========================================================================';

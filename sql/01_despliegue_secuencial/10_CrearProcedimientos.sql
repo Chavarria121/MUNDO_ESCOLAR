@@ -2622,6 +2622,7 @@ GO
 -- 69. SP_DBA_EjecutarBackupCompleto
 CREATE OR ALTER PROCEDURE dbo.SP_DBA_EjecutarBackupCompleto
     @RutaCarpetaBackup VARCHAR(255) = 'C:\SQLBackup'
+WITH EXECUTE AS OWNER
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -2632,14 +2633,14 @@ BEGIN
         DECLARE @Sql NVARCHAR(MAX) = N'BACKUP DATABASE MUNDO_ESCOLAR TO DISK = ''' + @ArchivoBak + ''' WITH FORMAT, INIT, COMPRESSION, STATS = 10;';
         EXEC sp_executesql @Sql;
 
-        INSERT INTO Bitacora (Id_Usuario, Accion, Tabla_Afectada, Fecha_Hora, Descripcion)
-        VALUES (1, 'BACKUP_FULL', 'DATABASE', GETDATE(), CONCAT('Respaldo completo generado en: ', @ArchivoBak));
+        INSERT INTO Bitacora (Id_Usuario, Accion, Tabla_Afectada, Id_Registro_Afectado, Fecha_Hora, Descripcion)
+        VALUES (1, 'BACKUP_FULL', 'DATABASE', 0, GETDATE(), LEFT(CONCAT('Respaldo completo generado en: ', @ArchivoBak), 200));
 
         SELECT 'Respaldo completo generado exitosamente.' AS Mensaje, @ArchivoBak AS Archivo;
     END TRY
     BEGIN CATCH
-        INSERT INTO Bitacora (Id_Usuario, Accion, Tabla_Afectada, Fecha_Hora, Descripcion)
-        VALUES (1, 'ERROR_BACKUP_FULL', 'DATABASE', GETDATE(), CONCAT('Fallo en backup completo: ', ERROR_MESSAGE()));
+        INSERT INTO Bitacora (Id_Usuario, Accion, Tabla_Afectada, Id_Registro_Afectado, Fecha_Hora, Descripcion)
+        VALUES (1, 'ERROR_BACKUP_FULL', 'DATABASE', 0, GETDATE(), LEFT(CONCAT('Fallo en backup completo: ', ERROR_MESSAGE()), 200));
         THROW;
     END CATCH
 END;
@@ -2648,6 +2649,7 @@ GO
 -- 70. SP_DBA_EjecutarBackupDiferencial
 CREATE OR ALTER PROCEDURE dbo.SP_DBA_EjecutarBackupDiferencial
     @RutaCarpetaBackup VARCHAR(255) = 'C:\SQLBackup'
+WITH EXECUTE AS OWNER
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -2658,14 +2660,14 @@ BEGIN
         DECLARE @Sql NVARCHAR(MAX) = N'BACKUP DATABASE MUNDO_ESCOLAR TO DISK = ''' + @ArchivoBak + ''' WITH DIFFERENTIAL, FORMAT, INIT, COMPRESSION, STATS = 10;';
         EXEC sp_executesql @Sql;
 
-        INSERT INTO Bitacora (Id_Usuario, Accion, Tabla_Afectada, Fecha_Hora, Descripcion)
-        VALUES (1, 'BACKUP_DIFF', 'DATABASE', GETDATE(), CONCAT('Respaldo diferencial generado en: ', @ArchivoBak));
+        INSERT INTO Bitacora (Id_Usuario, Accion, Tabla_Afectada, Id_Registro_Afectado, Fecha_Hora, Descripcion)
+        VALUES (1, 'BACKUP_DIFF', 'DATABASE', 0, GETDATE(), LEFT(CONCAT('Respaldo diferencial generado en: ', @ArchivoBak), 200));
 
         SELECT 'Respaldo diferencial generado exitosamente.' AS Mensaje, @ArchivoBak AS Archivo;
     END TRY
     BEGIN CATCH
-        INSERT INTO Bitacora (Id_Usuario, Accion, Tabla_Afectada, Fecha_Hora, Descripcion)
-        VALUES (1, 'ERROR_BACKUP_DIFF', 'DATABASE', GETDATE(), CONCAT('Fallo en backup diferencial: ', ERROR_MESSAGE()));
+        INSERT INTO Bitacora (Id_Usuario, Accion, Tabla_Afectada, Id_Registro_Afectado, Fecha_Hora, Descripcion)
+        VALUES (1, 'ERROR_BACKUP_DIFF', 'DATABASE', 0, GETDATE(), LEFT(CONCAT('Fallo en backup diferencial: ', ERROR_MESSAGE()), 200));
         THROW;
     END CATCH
 END;
@@ -2674,6 +2676,7 @@ GO
 -- 71. SP_DBA_EjecutarBackupLog
 CREATE OR ALTER PROCEDURE dbo.SP_DBA_EjecutarBackupLog
     @RutaCarpetaBackup VARCHAR(255) = 'C:\SQLBackup'
+WITH EXECUTE AS OWNER
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -2693,8 +2696,8 @@ BEGIN
         DECLARE @Sql NVARCHAR(MAX) = N'BACKUP LOG MUNDO_ESCOLAR TO DISK = ''' + @ArchivoTrn + ''' WITH FORMAT, INIT, COMPRESSION;';
         EXEC sp_executesql @Sql;
 
-        INSERT INTO Bitacora (Id_Usuario, Accion, Tabla_Afectada, Fecha_Hora, Descripcion)
-        VALUES (1, 'BACKUP_LOG', 'DATABASE', GETDATE(), CONCAT('Respaldo de log generado en: ', @ArchivoTrn));
+        INSERT INTO Bitacora (Id_Usuario, Accion, Tabla_Afectada, Id_Registro_Afectado, Fecha_Hora, Descripcion)
+        VALUES (1, 'BACKUP_LOG', 'DATABASE', 0, GETDATE(), LEFT(CONCAT('Respaldo de log generado en: ', @ArchivoTrn), 200));
 
         SELECT 'Respaldo de Log ejecutado exitosamente.' AS Mensaje, @ArchivoTrn AS Archivo;
     END TRY
@@ -2707,6 +2710,7 @@ GO
 -- 72. SP_DBA_VerificarIntegridadBackup
 CREATE OR ALTER PROCEDURE dbo.SP_DBA_VerificarIntegridadBackup
     @RutaArchivoBak VARCHAR(500)
+WITH EXECUTE AS OWNER
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -2714,14 +2718,14 @@ BEGIN
         DECLARE @Sql NVARCHAR(MAX) = N'RESTORE VERIFYONLY FROM DISK = ''' + @RutaArchivoBak + ''';';
         EXEC sp_executesql @Sql;
 
-        INSERT INTO Bitacora (Id_Usuario, Accion, Tabla_Afectada, Fecha_Hora, Descripcion)
-        VALUES (1, 'VERIFY_BACKUP_OK', 'DATABASE', GETDATE(), CONCAT('Archivo verificado correctamente: ', @RutaArchivoBak));
+        INSERT INTO Bitacora (Id_Usuario, Accion, Tabla_Afectada, Id_Registro_Afectado, Fecha_Hora, Descripcion)
+        VALUES (1, 'VERIFY_BACKUP_OK', 'DATABASE', 0, GETDATE(), LEFT(CONCAT('Archivo verificado correctamente: ', @RutaArchivoBak), 200));
 
         SELECT 'El archivo de respaldo es técnicamente íntegro y legible por SQL Server.' AS Resultado, @RutaArchivoBak AS Archivo;
     END TRY
     BEGIN CATCH
-        INSERT INTO Bitacora (Id_Usuario, Accion, Tabla_Afectada, Fecha_Hora, Descripcion)
-        VALUES (1, 'VERIFY_BACKUP_FAIL', 'DATABASE', GETDATE(), CONCAT('Fallo en verificación de backup: ', ERROR_MESSAGE()));
+        INSERT INTO Bitacora (Id_Usuario, Accion, Tabla_Afectada, Id_Registro_Afectado, Fecha_Hora, Descripcion)
+        VALUES (1, 'VERIFY_BACKUP_FAIL', 'DATABASE', 0, GETDATE(), LEFT(CONCAT('Fallo en verificación de backup: ', ERROR_MESSAGE()), 200));
         THROW;
     END CATCH
 END;
@@ -2729,20 +2733,21 @@ GO
 
 -- 73. SP_DBA_VerificarIntegridadBD
 CREATE OR ALTER PROCEDURE dbo.SP_DBA_VerificarIntegridadBD
+WITH EXECUTE AS OWNER
 AS
 BEGIN
     SET NOCOUNT ON;
     BEGIN TRY
         DBCC CHECKDB ('MUNDO_ESCOLAR') WITH NO_INFOMSGS, ALL_ERRORMSGS;
 
-        INSERT INTO Bitacora (Id_Usuario, Accion, Tabla_Afectada, Fecha_Hora, Descripcion)
-        VALUES (1, 'CHECKDB_OK', 'MUNDO_ESCOLAR', GETDATE(), 'DBCC CHECKDB ejecutado sin errores de consistencia.');
+        INSERT INTO Bitacora (Id_Usuario, Accion, Tabla_Afectada, Id_Registro_Afectado, Fecha_Hora, Descripcion)
+        VALUES (1, 'CHECKDB_OK', 'MUNDO_ESCOLAR', 0, GETDATE(), 'DBCC CHECKDB ejecutado sin errores de consistencia.');
 
         SELECT 'Consistencia física y lógica de MUNDO_ESCOLAR verificada: 0 errores detectados.' AS EstadoConsistencia;
     END TRY
     BEGIN CATCH
-        INSERT INTO Bitacora (Id_Usuario, Accion, Tabla_Afectada, Fecha_Hora, Descripcion)
-        VALUES (1, 'CHECKDB_ERROR', 'MUNDO_ESCOLAR', GETDATE(), CONCAT('Errores de consistencia detectados: ', ERROR_MESSAGE()));
+        INSERT INTO Bitacora (Id_Usuario, Accion, Tabla_Afectada, Id_Registro_Afectado, Fecha_Hora, Descripcion)
+        VALUES (1, 'CHECKDB_ERROR', 'MUNDO_ESCOLAR', 0, GETDATE(), LEFT(CONCAT('Errores de consistencia detectados: ', ERROR_MESSAGE()), 200));
         THROW;
     END CATCH
 END;
@@ -2795,8 +2800,8 @@ BEGIN
             CLOSE cur_idx;
             DEALLOCATE cur_idx;
 
-            INSERT INTO Bitacora (Id_Usuario, Accion, Tabla_Afectada, Fecha_Hora, Descripcion)
-            VALUES (1, 'MANTENIMIENTO_INDICES', 'INDICES', GETDATE(), 'Mantenimiento de índices ejecutado.');
+            INSERT INTO Bitacora (Id_Usuario, Accion, Tabla_Afectada, Id_Registro_Afectado, Fecha_Hora, Descripcion)
+            VALUES (1, 'MANTENIMIENTO_INDICES', 'INDICES', 0, GETDATE(), 'Mantenimiento de índices ejecutado.');
         END
 
         SELECT * FROM @Resultados ORDER BY Fragmentacion DESC;
@@ -2819,8 +2824,8 @@ BEGIN
         UPDATE STATISTICS dbo.Producto WITH FULLSCAN;
         UPDATE STATISTICS dbo.Movimiento_Inventario WITH FULLSCAN;
 
-        INSERT INTO Bitacora (Id_Usuario, Accion, Tabla_Afectada, Fecha_Hora, Descripcion)
-        VALUES (1, 'ESTADISTICAS_ACTUALIZADAS', 'TABLAS_CRITICAS', GETDATE(), 'Actualización con FULLSCAN en tablas transaccionales de alto volumen.');
+        INSERT INTO Bitacora (Id_Usuario, Accion, Tabla_Afectada, Id_Registro_Afectado, Fecha_Hora, Descripcion)
+        VALUES (1, 'ESTADISTICAS_ACTUALIZADAS', 'TABLAS_CRITICAS', 0, GETDATE(), 'Actualización con FULLSCAN en tablas transaccionales de alto volumen.');
 
         SELECT 'Estadísticas de consulta actualizadas para tablas de alta concurrencia.' AS Mensaje, GETDATE() AS FechaHora;
     END TRY

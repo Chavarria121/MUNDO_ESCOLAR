@@ -76,6 +76,8 @@ ALTER ROLE rol_db_vendedor ADD MEMBER usr_mundo_vendedor;
 ALTER ROLE rol_db_bodeguero ADD MEMBER usr_mundo_bodeguero;
 ALTER ROLE rol_db_contador ADD MEMBER usr_mundo_contador;
 ALTER ROLE rol_db_aplicacion ADD MEMBER usr_mundo_app;
+-- Concesión de rol de operador de respaldo para tareas de mantenimiento de la aplicación
+ALTER ROLE db_backupoperator ADD MEMBER usr_mundo_app;
 GO
 
 -- 4. CONCESIÓN DE PERMISOS MÍNIMOS (17_AsignarPermisos.sql)
