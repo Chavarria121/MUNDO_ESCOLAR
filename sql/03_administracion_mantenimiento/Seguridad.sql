@@ -76,8 +76,8 @@ ALTER ROLE rol_db_vendedor ADD MEMBER usr_mundo_vendedor;
 ALTER ROLE rol_db_bodeguero ADD MEMBER usr_mundo_bodeguero;
 ALTER ROLE rol_db_contador ADD MEMBER usr_mundo_contador;
 ALTER ROLE rol_db_aplicacion ADD MEMBER usr_mundo_app;
--- Concesión de rol de operador de respaldo para tareas de mantenimiento de la aplicación
-ALTER ROLE db_backupoperator ADD MEMBER usr_mundo_app;
+-- Concesión de rol de operador eliminada por PoLP (Hallazgo S05).
+-- La delegación de permisos de respaldo se realiza exclusivamente mediante Module Signing (Firma de SPs con certificados).
 GO
 
 -- 4. CONCESIÓN DE PERMISOS MÍNIMOS (17_AsignarPermisos.sql)
@@ -183,6 +183,73 @@ INNER JOIN sys.database_principals pr ON pe.grantee_principal_id = pr.principal_
 LEFT JOIN sys.objects obj ON pe.major_id = obj.object_id
 WHERE pr.name IN ('rol_db_administrador', 'rol_db_vendedor', 'rol_db_bodeguero', 'rol_db_contador', 'rol_db_aplicacion')
 ORDER BY pr.name, pe.state_desc, obj.name;
+GO
+
+
+-- 7. CONFIGURACIÓN DE MODULE SIGNING (DELEGACIÓN SEGURA DE RESPALDOS CON TRUSTWORTHY OFF)
+-- Satisface S04 y S05: El usuario usr_mundo_app NO requiere db_backupoperator ni TRUSTWORTHY ON.
+USE MUNDO_ESCOLAR;
+GO
+
+-- 7.1 Asegurar Master Key en MUNDO_ESCOLAR con cifrado por Service Master Key
+IF NOT EXISTS (SELECT 1 FROM sys.symmetric_keys WHERE name = '##MS_DatabaseMasterKey##')
+BEGIN
+    CREATE MASTER KEY ENCRYPTION BY PASSWORD = 'MasterKeyPassword2026*!Complex';
+    ALTER MASTER KEY ADD ENCRYPTION BY SERVICE MASTER KEY;
+END
+GO
+
+-- 7.2 Crear Certificado de Firma DBA si no existe
+IF NOT EXISTS (SELECT 1 FROM sys.certificates WHERE name = 'Cert_MundoEscolar_DBA')
+BEGIN
+    CREATE CERTIFICATE Cert_MundoEscolar_DBA
+    WITH SUBJECT = 'Certificado Firma DBA Mundo Escolar (Module Signing)';
+END
+GO
+
+-- 7.3 Crear principal de BD asociado al certificado y conceder permisos de respaldo
+IF NOT EXISTS (SELECT 1 FROM sys.database_principals WHERE name = 'usr_cert_dba')
+BEGIN
+    CREATE USER usr_cert_dba FROM CERTIFICATE Cert_MundoEscolar_DBA;
+END
+GRANT BACKUP DATABASE TO usr_cert_dba;
+GRANT BACKUP LOG TO usr_cert_dba;
+GO
+
+-- 7.4 Exportar clave pública e importar en master para permisos a nivel servidor
+DECLARE @RutaCer VARCHAR(500) = 'C:\SQLBackup\Cert_MundoEscolar_DBA_' + REPLACE(CONVERT(VARCHAR(50), NEWID()), '-', '') + '.cer';
+DECLARE @SqlExport NVARCHAR(MAX) = N'BACKUP CERTIFICATE Cert_MundoEscolar_DBA TO FILE = ''' + @RutaCer + ''';';
+EXEC sp_executesql @SqlExport;
+
+DECLARE @SqlImport NVARCHAR(MAX) = N'
+USE master;
+IF EXISTS (SELECT 1 FROM sys.certificates WHERE name = ''Cert_MundoEscolar_DBA'')
+    DROP CERTIFICATE Cert_MundoEscolar_DBA;
+CREATE CERTIFICATE Cert_MundoEscolar_DBA FROM FILE = ''' + @RutaCer + ''';
+';
+EXEC sp_executesql @SqlImport;
+GO
+
+USE master;
+GO
+
+-- 7.5 Crear login de certificado en master con AUTHENTICATE SERVER y CREATE ANY DATABASE
+IF NOT EXISTS (SELECT 1 FROM sys.server_principals WHERE name = 'login_cert_dba')
+BEGIN
+    CREATE LOGIN login_cert_dba FROM CERTIFICATE Cert_MundoEscolar_DBA;
+END
+GRANT AUTHENTICATE SERVER TO login_cert_dba;
+GRANT CREATE ANY DATABASE TO login_cert_dba;
+GO
+
+USE MUNDO_ESCOLAR;
+GO
+
+-- 7.6 Firmar criptográficamente los procedimientos de respaldo (SPs 69-72)
+ADD SIGNATURE TO dbo.SP_DBA_EjecutarBackupCompleto BY CERTIFICATE Cert_MundoEscolar_DBA;
+ADD SIGNATURE TO dbo.SP_DBA_EjecutarBackupDiferencial BY CERTIFICATE Cert_MundoEscolar_DBA;
+ADD SIGNATURE TO dbo.SP_DBA_EjecutarBackupLog BY CERTIFICATE Cert_MundoEscolar_DBA;
+ADD SIGNATURE TO dbo.SP_DBA_VerificarIntegridadBackup BY CERTIFICATE Cert_MundoEscolar_DBA;
 GO
 
 PRINT 'Seguridad y matriz de permisos instaladas exitosamente.';

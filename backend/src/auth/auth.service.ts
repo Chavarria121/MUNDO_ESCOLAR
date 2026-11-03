@@ -1,9 +1,10 @@
-import { ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { SqlService } from '../database/sql.service';
-import { verificarContrasena } from './password.util';
+import { hashContrasena, verificarContrasena } from './password.util';
 import { JwtPayload, UsuarioSesion } from './interfaces/usuario-sesion.interface';
+import { CambiarContrasenaDto } from './dto/cambiar-contrasena.dto';
 
 interface FilaAutenticacion {
   Id_Usuario: number;
@@ -69,5 +70,40 @@ export class AuthService {
       correo: fila.Correo,
       permisos: await this.permisosDe(fila.Id_Usuario),
     };
+  }
+
+  /** Permite al usuario autenticado actualizar su contraseña de forma segura. */
+  async cambiarContrasena(idUsuario: number, dto: CambiarContrasenaDto) {
+    const filas = await this.sql.consultarQuery<{ Id_Usuario: number; Contrasena: string; Estado: boolean }>(
+      'SELECT Id_Usuario, Contrasena, Estado FROM Usuario WHERE Id_Usuario = @id',
+      { id: idUsuario },
+    );
+    const usuario = filas[0];
+    if (!usuario) {
+      throw new UnauthorizedException('Usuario no encontrado.');
+    }
+    if (!usuario.Estado) {
+      throw new ForbiddenException('El usuario se encuentra inactivo.');
+    }
+    if (!verificarContrasena(dto.contrasenaActual, usuario.Contrasena)) {
+      throw new UnauthorizedException('La contraseña actual es incorrecta.');
+    }
+    if (dto.contrasenaNueva === dto.contrasenaActual) {
+      throw new BadRequestException('La nueva contraseña debe ser diferente a la contraseña actual.');
+    }
+
+    const nuevaHash = hashContrasena(dto.contrasenaNueva);
+    await this.sql.consultarQuery(
+      'UPDATE Usuario SET Contrasena = @nuevaHash WHERE Id_Usuario = @id',
+      { nuevaHash, id: idUsuario },
+    );
+
+    await this.sql.consultarQuery(
+      `INSERT INTO Bitacora (Id_Usuario, Accion, Tabla_Afectada, Id_Registro_Afectado, Fecha_Hora, Descripcion)
+       VALUES (@id, 'PASSWORD_CHANGE', 'Usuario', @id, GETDATE(), 'Cambio de contraseña efectuado exitosamente.')`,
+      { id: idUsuario },
+    );
+
+    return { mensaje: 'Contraseña actualizada exitosamente.' };
   }
 }

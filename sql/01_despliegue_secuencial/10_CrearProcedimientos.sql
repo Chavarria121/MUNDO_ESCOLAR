@@ -2621,26 +2621,32 @@ GO
 
 -- 69. SP_DBA_EjecutarBackupCompleto
 CREATE OR ALTER PROCEDURE dbo.SP_DBA_EjecutarBackupCompleto
-    @RutaCarpetaBackup VARCHAR(255) = 'C:\SQLBackup'
-WITH EXECUTE AS OWNER
+    @Id_Usuario INT = 1,
+    @ArchivoGenerado NVARCHAR(500) = NULL OUTPUT
 AS
 BEGIN
     SET NOCOUNT ON;
     BEGIN TRY
+        DECLARE @GuidStr VARCHAR(50) = CONVERT(VARCHAR(50), NEWID());
         DECLARE @FechaStr VARCHAR(20) = REPLACE(REPLACE(REPLACE(CONVERT(VARCHAR(19), GETDATE(), 120), '-', ''), ':', ''), ' ', '_');
-        DECLARE @ArchivoBak VARCHAR(500) = @RutaCarpetaBackup + '\MUNDO_ESCOLAR_FULL_' + @FechaStr + '.bak';
+        
+        -- Confinamiento estricto en el servidor (C:\SQLBackup\) con GUID anti-colisión
+        DECLARE @ArchivoBak NVARCHAR(500) = N'C:\SQLBackup\MUNDO_ESCOLAR_FULL_' + @FechaStr + N'_' + @GuidStr + N'.bak';
+        SET @ArchivoGenerado = @ArchivoBak;
 
-        DECLARE @Sql NVARCHAR(MAX) = N'BACKUP DATABASE MUNDO_ESCOLAR TO DISK = ''' + @ArchivoBak + ''' WITH FORMAT, INIT, COMPRESSION, STATS = 10;';
-        EXEC sp_executesql @Sql;
+        -- SINTAXIS NATIVA DIRECTA (Cero sp_executesql, sin FORMAT ni INIT destructivos)
+        BACKUP DATABASE MUNDO_ESCOLAR 
+        TO DISK = @ArchivoBak 
+        WITH COMPRESSION, STATS = 10;
 
         INSERT INTO Bitacora (Id_Usuario, Accion, Tabla_Afectada, Id_Registro_Afectado, Fecha_Hora, Descripcion)
-        VALUES (1, 'BACKUP_FULL', 'DATABASE', 0, GETDATE(), LEFT(CONCAT('Respaldo completo generado en: ', @ArchivoBak), 200));
+        VALUES (@Id_Usuario, 'BACKUP_FULL', 'DATABASE', 0, GETDATE(), LEFT(CONCAT('Respaldo completo generado en: ', @ArchivoBak), 200));
 
         SELECT 'Respaldo completo generado exitosamente.' AS Mensaje, @ArchivoBak AS Archivo;
     END TRY
     BEGIN CATCH
         INSERT INTO Bitacora (Id_Usuario, Accion, Tabla_Afectada, Id_Registro_Afectado, Fecha_Hora, Descripcion)
-        VALUES (1, 'ERROR_BACKUP_FULL', 'DATABASE', 0, GETDATE(), LEFT(CONCAT('Fallo en backup completo: ', ERROR_MESSAGE()), 200));
+        VALUES (@Id_Usuario, 'ERROR_BACKUP_FULL', 'DATABASE', 0, GETDATE(), LEFT(CONCAT('Fallo en backup completo: ', ERROR_MESSAGE()), 200));
         THROW;
     END CATCH
 END;
@@ -2648,26 +2654,32 @@ GO
 
 -- 70. SP_DBA_EjecutarBackupDiferencial
 CREATE OR ALTER PROCEDURE dbo.SP_DBA_EjecutarBackupDiferencial
-    @RutaCarpetaBackup VARCHAR(255) = 'C:\SQLBackup'
-WITH EXECUTE AS OWNER
+    @Id_Usuario INT = 1,
+    @ArchivoGenerado NVARCHAR(500) = NULL OUTPUT
 AS
 BEGIN
     SET NOCOUNT ON;
     BEGIN TRY
+        DECLARE @GuidStr VARCHAR(50) = CONVERT(VARCHAR(50), NEWID());
         DECLARE @FechaStr VARCHAR(20) = REPLACE(REPLACE(REPLACE(CONVERT(VARCHAR(19), GETDATE(), 120), '-', ''), ':', ''), ' ', '_');
-        DECLARE @ArchivoBak VARCHAR(500) = @RutaCarpetaBackup + '\MUNDO_ESCOLAR_DIFF_' + @FechaStr + '.bak';
+        
+        -- Confinamiento estricto en el servidor (C:\SQLBackup\) con GUID anti-colisión
+        DECLARE @ArchivoBak NVARCHAR(500) = N'C:\SQLBackup\MUNDO_ESCOLAR_DIFF_' + @FechaStr + N'_' + @GuidStr + N'.bak';
+        SET @ArchivoGenerado = @ArchivoBak;
 
-        DECLARE @Sql NVARCHAR(MAX) = N'BACKUP DATABASE MUNDO_ESCOLAR TO DISK = ''' + @ArchivoBak + ''' WITH DIFFERENTIAL, FORMAT, INIT, COMPRESSION, STATS = 10;';
-        EXEC sp_executesql @Sql;
+        -- SINTAXIS NATIVA DIRECTA (Cero sp_executesql)
+        BACKUP DATABASE MUNDO_ESCOLAR 
+        TO DISK = @ArchivoBak 
+        WITH DIFFERENTIAL, COMPRESSION, STATS = 10;
 
         INSERT INTO Bitacora (Id_Usuario, Accion, Tabla_Afectada, Id_Registro_Afectado, Fecha_Hora, Descripcion)
-        VALUES (1, 'BACKUP_DIFF', 'DATABASE', 0, GETDATE(), LEFT(CONCAT('Respaldo diferencial generado en: ', @ArchivoBak), 200));
+        VALUES (@Id_Usuario, 'BACKUP_DIFF', 'DATABASE', 0, GETDATE(), LEFT(CONCAT('Respaldo diferencial generado en: ', @ArchivoBak), 200));
 
         SELECT 'Respaldo diferencial generado exitosamente.' AS Mensaje, @ArchivoBak AS Archivo;
     END TRY
     BEGIN CATCH
         INSERT INTO Bitacora (Id_Usuario, Accion, Tabla_Afectada, Id_Registro_Afectado, Fecha_Hora, Descripcion)
-        VALUES (1, 'ERROR_BACKUP_DIFF', 'DATABASE', 0, GETDATE(), LEFT(CONCAT('Fallo en backup diferencial: ', ERROR_MESSAGE()), 200));
+        VALUES (@Id_Usuario, 'ERROR_BACKUP_DIFF', 'DATABASE', 0, GETDATE(), LEFT(CONCAT('Fallo en backup diferencial: ', ERROR_MESSAGE()), 200));
         THROW;
     END CATCH
 END;
@@ -2675,8 +2687,8 @@ GO
 
 -- 71. SP_DBA_EjecutarBackupLog
 CREATE OR ALTER PROCEDURE dbo.SP_DBA_EjecutarBackupLog
-    @RutaCarpetaBackup VARCHAR(255) = 'C:\SQLBackup'
-WITH EXECUTE AS OWNER
+    @Id_Usuario INT = 1,
+    @ArchivoGenerado NVARCHAR(500) = NULL OUTPUT
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -2690,18 +2702,26 @@ BEGIN
             RETURN;
         END
 
+        DECLARE @GuidStr VARCHAR(50) = CONVERT(VARCHAR(50), NEWID());
         DECLARE @FechaStr VARCHAR(20) = REPLACE(REPLACE(REPLACE(CONVERT(VARCHAR(19), GETDATE(), 120), '-', ''), ':', ''), ' ', '_');
-        DECLARE @ArchivoTrn VARCHAR(500) = @RutaCarpetaBackup + '\MUNDO_ESCOLAR_LOG_' + @FechaStr + '.trn';
+        
+        -- Confinamiento estricto en el servidor (C:\SQLBackup\) con GUID anti-colisión
+        DECLARE @ArchivoTrn NVARCHAR(500) = N'C:\SQLBackup\MUNDO_ESCOLAR_LOG_' + @FechaStr + N'_' + @GuidStr + N'.trn';
+        SET @ArchivoGenerado = @ArchivoTrn;
 
-        DECLARE @Sql NVARCHAR(MAX) = N'BACKUP LOG MUNDO_ESCOLAR TO DISK = ''' + @ArchivoTrn + ''' WITH FORMAT, INIT, COMPRESSION;';
-        EXEC sp_executesql @Sql;
+        -- SINTAXIS NATIVA DIRECTA (Cero sp_executesql)
+        BACKUP LOG MUNDO_ESCOLAR 
+        TO DISK = @ArchivoTrn 
+        WITH COMPRESSION, STATS = 10;
 
         INSERT INTO Bitacora (Id_Usuario, Accion, Tabla_Afectada, Id_Registro_Afectado, Fecha_Hora, Descripcion)
-        VALUES (1, 'BACKUP_LOG', 'DATABASE', 0, GETDATE(), LEFT(CONCAT('Respaldo de log generado en: ', @ArchivoTrn), 200));
+        VALUES (@Id_Usuario, 'BACKUP_LOG', 'DATABASE', 0, GETDATE(), LEFT(CONCAT('Respaldo de log generado en: ', @ArchivoTrn), 200));
 
         SELECT 'Respaldo de Log ejecutado exitosamente.' AS Mensaje, @ArchivoTrn AS Archivo;
     END TRY
     BEGIN CATCH
+        INSERT INTO Bitacora (Id_Usuario, Accion, Tabla_Afectada, Id_Registro_Afectado, Fecha_Hora, Descripcion)
+        VALUES (@Id_Usuario, 'ERROR_BACKUP_LOG', 'DATABASE', 0, GETDATE(), LEFT(CONCAT('Fallo en backup de log: ', ERROR_MESSAGE()), 200));
         THROW;
     END CATCH
 END;
@@ -2709,23 +2729,31 @@ GO
 
 -- 72. SP_DBA_VerificarIntegridadBackup
 CREATE OR ALTER PROCEDURE dbo.SP_DBA_VerificarIntegridadBackup
-    @RutaArchivoBak VARCHAR(500)
-WITH EXECUTE AS OWNER
+    @RutaArchivoBak NVARCHAR(500),
+    @Id_Usuario INT = 1
 AS
 BEGIN
     SET NOCOUNT ON;
     BEGIN TRY
-        DECLARE @Sql NVARCHAR(MAX) = N'RESTORE VERIFYONLY FROM DISK = ''' + @RutaArchivoBak + ''';';
-        EXEC sp_executesql @Sql;
+        -- Validación canónica estricta contra Path Traversal e inyección de archivos
+        IF @RutaArchivoBak LIKE '%..%' 
+           OR @RutaArchivoBak LIKE '%\\%' 
+           OR (@RutaArchivoBak NOT LIKE 'C:\SQLBackup\%.bak' AND @RutaArchivoBak NOT LIKE 'C:\SQLBackup\%.trn')
+        BEGIN
+            THROW 50001, 'Ruta de archivo no autorizada o no canónica.', 1;
+        END;
+
+        -- SINTAXIS NATIVA DIRECTA (Cero sp_executesql, erradica inyección SQL)
+        RESTORE VERIFYONLY FROM DISK = @RutaArchivoBak;
 
         INSERT INTO Bitacora (Id_Usuario, Accion, Tabla_Afectada, Id_Registro_Afectado, Fecha_Hora, Descripcion)
-        VALUES (1, 'VERIFY_BACKUP_OK', 'DATABASE', 0, GETDATE(), LEFT(CONCAT('Archivo verificado correctamente: ', @RutaArchivoBak), 200));
+        VALUES (@Id_Usuario, 'VERIFY_BACKUP_OK', 'DATABASE', 0, GETDATE(), LEFT(CONCAT('Archivo verificado correctamente: ', @RutaArchivoBak), 200));
 
         SELECT 'El archivo de respaldo es técnicamente íntegro y legible por SQL Server.' AS Resultado, @RutaArchivoBak AS Archivo;
     END TRY
     BEGIN CATCH
         INSERT INTO Bitacora (Id_Usuario, Accion, Tabla_Afectada, Id_Registro_Afectado, Fecha_Hora, Descripcion)
-        VALUES (1, 'VERIFY_BACKUP_FAIL', 'DATABASE', 0, GETDATE(), LEFT(CONCAT('Fallo en verificación de backup: ', ERROR_MESSAGE()), 200));
+        VALUES (@Id_Usuario, 'VERIFY_BACKUP_FAIL', 'DATABASE', 0, GETDATE(), LEFT(CONCAT('Fallo en verificación de backup: ', ERROR_MESSAGE()), 200));
         THROW;
     END CATCH
 END;

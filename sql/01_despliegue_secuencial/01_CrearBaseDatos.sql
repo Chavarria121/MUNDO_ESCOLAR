@@ -80,8 +80,9 @@ GO
 ALTER AUTHORIZATION ON DATABASE::MUNDO_ESCOLAR TO sa;
 GO
 
--- Habilitación de TRUSTWORTHY para procedimientos de mantenimiento con EXECUTE AS OWNER
-ALTER DATABASE MUNDO_ESCOLAR SET TRUSTWORTHY ON;
+-- Seguridad: Mantener TRUSTWORTHY OFF. La delegación de privilegios administrativos
+-- se realiza de forma segura mediante Module Signing (Firma criptográfica con certificados).
+ALTER DATABASE MUNDO_ESCOLAR SET TRUSTWORTHY OFF;
 GO
 
 -- Creación del tipo alias BOOL para compatibilidad exacta con el modelo relacional

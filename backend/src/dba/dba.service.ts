@@ -2,7 +2,6 @@ import { Injectable } from '@nestjs/common';
 import { SqlService } from '../database/sql.service';
 import {
   ConsultarHistorialBackupsDto,
-  EjecutarBackupDto,
   MantenimientoIndicesDto,
   VerificarIntegridadBackupDto,
 } from './dto/dba.dto';
@@ -23,27 +22,28 @@ export class DbaService {
     });
   }
 
-  async ejecutarBackupCompleto(dto: EjecutarBackupDto) {
+  async ejecutarBackupCompleto(idUsuario: number = 1) {
     return this.sql.consultarSPUno('SP_DBA_EjecutarBackupCompleto', {
-      RutaCarpetaBackup: dto.rutaCarpetaBackup ?? 'C:\\SQLBackup',
+      Id_Usuario: idUsuario,
     });
   }
 
-  async ejecutarBackupDiferencial(dto: EjecutarBackupDto) {
+  async ejecutarBackupDiferencial(idUsuario: number = 1) {
     return this.sql.consultarSPUno('SP_DBA_EjecutarBackupDiferencial', {
-      RutaCarpetaBackup: dto.rutaCarpetaBackup ?? 'C:\\SQLBackup',
+      Id_Usuario: idUsuario,
     });
   }
 
-  async ejecutarBackupLog(dto: EjecutarBackupDto) {
+  async ejecutarBackupLog(idUsuario: number = 1) {
     return this.sql.consultarSPUno('SP_DBA_EjecutarBackupLog', {
-      RutaCarpetaBackup: dto.rutaCarpetaBackup ?? 'C:\\SQLBackup',
+      Id_Usuario: idUsuario,
     });
   }
 
-  async verificarIntegridad(dto: VerificarIntegridadBackupDto) {
+  async verificarIntegridad(dto: VerificarIntegridadBackupDto, idUsuario: number = 1) {
     return this.sql.consultarSPUno('SP_DBA_VerificarIntegridadBackup', {
       RutaArchivoBak: dto.rutaArchivoBak,
+      Id_Usuario: idUsuario,
     });
   }
 }

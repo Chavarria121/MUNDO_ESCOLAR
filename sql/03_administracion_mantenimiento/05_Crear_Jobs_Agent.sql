@@ -26,13 +26,13 @@ BEGIN
     PRINT '   sql/03_administracion_mantenimiento/04_Automatizacion_Respaldos_TaskScheduler.bat';
     RETURN;
 END;
-
--- Declaración de variables auxiliares
-DECLARE @JobId BINARY(16);
+GO
 
 -- =========================================================================
 -- JOB 1: RESPALDO COMPLETO SEMANAL
 -- =========================================================================
+DECLARE @JobId BINARY(16);
+
 IF EXISTS (SELECT job_id FROM msdb.dbo.sysjobs WHERE name = N'MundoEscolar_Backup_Semanal')
     EXEC sp_delete_job @job_name = N'MundoEscolar_Backup_Semanal';
 
@@ -65,10 +65,13 @@ EXEC sp_add_jobserver
     @server_name = N'(LOCAL)';
 
 PRINT '[OK] Job "MundoEscolar_Backup_Semanal" configurado (Domingos 01:00 AM).';
+GO
 
 -- =========================================================================
 -- JOB 2: RESPALDO DIFERENCIAL DIARIO
 -- =========================================================================
+DECLARE @JobId BINARY(16);
+
 IF EXISTS (SELECT job_id FROM msdb.dbo.sysjobs WHERE name = N'MundoEscolar_Backup_Diferencial')
     EXEC sp_delete_job @job_name = N'MundoEscolar_Backup_Diferencial';
 
@@ -101,10 +104,13 @@ EXEC sp_add_jobserver
     @server_name = N'(LOCAL)';
 
 PRINT '[OK] Job "MundoEscolar_Backup_Diferencial" configurado (Lunes a Sábado 01:00 AM).';
+GO
 
 -- =========================================================================
 -- JOB 3: RESPALDO DE LOG CADA 4 HORAS (CONDICIONAL)
 -- =========================================================================
+DECLARE @JobId BINARY(16);
+
 IF EXISTS (SELECT job_id FROM msdb.dbo.sysjobs WHERE name = N'MundoEscolar_Backup_Log')
     EXEC sp_delete_job @job_name = N'MundoEscolar_Backup_Log';
 
@@ -142,4 +148,3 @@ PRINT '=========================================================================
 PRINT '   TODOS LOS JOBS FUERON CONFIGURADOS EXITOSAMENTE';
 PRINT '=========================================================================';
 GO
-

@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsBoolean, IsDateString, IsInt, IsNotEmpty, IsOptional, IsString, MaxLength, Min } from 'class-validator';
+import { IsBoolean, IsDateString, IsInt, IsNotEmpty, IsOptional, IsString, MaxLength, Min, MinLength } from 'class-validator';
 
 export class CrearClienteParticularDto {
   @ApiProperty({ example: '1-1555-0899', maxLength: 20 })
@@ -50,11 +50,12 @@ export class CrearClienteParticularDto {
   @MaxLength(50)
   nombreUsuario?: string;
 
-  @ApiPropertyOptional({ example: 'MiClave123!', maxLength: 50 })
+  @ApiProperty({ example: 'MiClaveSegura2026!', minLength: 8, maxLength: 50, description: 'Contraseña requerida del cliente' })
   @IsString()
-  @IsOptional()
+  @IsNotEmpty({ message: 'La contraseña es obligatoria.' })
+  @MinLength(8, { message: 'La contraseña debe tener al menos 8 caracteres.' })
   @MaxLength(50)
-  contrasena?: string;
+  contrasena: string;
 }
 
 export class CrearClienteInstitucionalDto {
@@ -106,11 +107,12 @@ export class CrearClienteInstitucionalDto {
   @MaxLength(50)
   nombreUsuario?: string;
 
-  @ApiPropertyOptional({ example: 'MiClave123!', maxLength: 50 })
+  @ApiProperty({ example: 'MiClaveSegura2026!', minLength: 8, maxLength: 50, description: 'Contraseña requerida del cliente institucional' })
   @IsString()
-  @IsOptional()
+  @IsNotEmpty({ message: 'La contraseña es obligatoria.' })
+  @MinLength(8, { message: 'La contraseña debe tener al menos 8 caracteres.' })
   @MaxLength(50)
-  contrasena?: string;
+  contrasena: string;
 }
 
 export class ActualizarClienteDto {

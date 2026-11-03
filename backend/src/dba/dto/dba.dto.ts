@@ -18,15 +18,12 @@ export class ConsultarHistorialBackupsDto {
 }
 
 export class EjecutarBackupDto {
-  @ApiPropertyOptional({ example: 'C:\\SQLBackup', default: 'C:\\SQLBackup', maxLength: 255 })
-  @IsString()
-  @IsOptional()
-  @MaxLength(255)
-  rutaCarpetaBackup?: string;
+  // El directorio de respaldo está confinado estrictamente en el servidor (C:\SQLBackup)
+  // Se elimina la recepción de ruta desde el cliente para prevenir manipulación externa.
 }
 
 export class VerificarIntegridadBackupDto {
-  @ApiProperty({ example: 'C:\\SQLBackup\\MUNDO_ESCOLAR_FULL_20261019_125440.bak' })
+  @ApiProperty({ example: 'C:\\SQLBackup\\MUNDO_ESCOLAR_FULL_20261102_212310_4D6333B3-B85F-400F-AB64-9B17FFD934C8.bak' })
   @IsString()
   @MaxLength(500)
   rutaArchivoBak: string;

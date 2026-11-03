@@ -4,13 +4,13 @@ jest.mock('@nestjs/config', () => ({
   },
   ConfigService: class {
     get(key: string) {
-      if (key === 'database.server') return 'localhost';
-      if (key === 'database.name') return 'MUNDO_ESCOLAR';
-      if (key === 'database.user') return 'sa';
-      if (key === 'database.password') return 'MundoEscolar2026*';
-      if (key === 'database.port') return 1433;
-      if (key === 'database.encrypt') return false;
-      if (key === 'database.trustServerCertificate') return true;
+      if (key === 'database.server') return process.env.DB_SERVER || 'localhost';
+      if (key === 'database.name') return process.env.DB_NAME || 'MUNDO_ESCOLAR';
+      if (key === 'database.user') return process.env.DB_USER || 'sa';
+      if (key === 'database.password') return process.env.DB_PASSWORD || 'MundoEscolar2026*';
+      if (key === 'database.port') return Number(process.env.DB_PORT) || 1433;
+      if (key === 'database.encrypt') return process.env.DB_ENCRYPT === 'true';
+      if (key === 'database.trustServerCertificate') return process.env.DB_TRUST_SERVER_CERTIFICATE !== 'false';
       return null;
     }
   },
@@ -27,13 +27,13 @@ import { ConfigService } from '@nestjs/config';
 
 class MockConfigService {
   get(key: string) {
-    if (key === 'database.server') return 'localhost';
-    if (key === 'database.name') return 'MUNDO_ESCOLAR';
-    if (key === 'database.user') return 'sa';
-    if (key === 'database.password') return 'MundoEscolar2026*';
-    if (key === 'database.port') return 1433;
-    if (key === 'database.encrypt') return false;
-    if (key === 'database.trustServerCertificate') return true;
+    if (key === 'database.server') return process.env.DB_SERVER || 'localhost';
+    if (key === 'database.name') return process.env.DB_NAME || 'MUNDO_ESCOLAR';
+    if (key === 'database.user') return process.env.DB_USER || 'sa';
+    if (key === 'database.password') return process.env.DB_PASSWORD || 'MundoEscolar2026*';
+    if (key === 'database.port') return Number(process.env.DB_PORT) || 1433;
+    if (key === 'database.encrypt') return process.env.DB_ENCRYPT === 'true';
+    if (key === 'database.trustServerCertificate') return process.env.DB_TRUST_SERVER_CERTIFICATE !== 'false';
     return null;
   }
 }

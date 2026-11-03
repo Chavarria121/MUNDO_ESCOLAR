@@ -1,4 +1,4 @@
-import { ConflictException, Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
 import { SqlService } from '../database/sql.service';
 import { hashContrasena } from '../auth/password.util';
 import {
@@ -122,7 +122,10 @@ export class ClientesService {
     const num = dto.identificacion.replace(/[^0-9]/g, '');
     const nomUser = (dto.nombreUsuario && dto.nombreUsuario.trim()) || ('cli.' + num);
     const correoUser = (dto.correo && dto.correo.trim()) || (nomUser + '@mundoescolar.cr');
-    const passPlano = (dto.contrasena && dto.contrasena.trim()) || 'Cliente2026!';
+    if (!dto.contrasena || !dto.contrasena.trim()) {
+      throw new BadRequestException('La contraseña es obligatoria para registrar un cliente.');
+    }
+    const passPlano = dto.contrasena.trim();
 
     // 1. Verificar si el usuario o correo ya existe en Usuario
     const existentes = await this.sql.consultarQuery<{ Id_Usuario: number; Nombre_Usuario: string; Correo: string }>(
@@ -171,7 +174,10 @@ export class ClientesService {
     const num = dto.cedulaJuridica.replace(/[^0-9]/g, '');
     const nomUser = (dto.nombreUsuario && dto.nombreUsuario.trim()) || ('inst.' + num);
     const correoUser = (dto.correoContacto && dto.correoContacto.trim()) || (nomUser + '@mundoescolar.cr');
-    const passPlano = (dto.contrasena && dto.contrasena.trim()) || 'Cliente2026!';
+    if (!dto.contrasena || !dto.contrasena.trim()) {
+      throw new BadRequestException('La contraseña es obligatoria para registrar un cliente.');
+    }
+    const passPlano = dto.contrasena.trim();
 
     // 1. Verificar si el usuario o correo ya existe en Usuario
     const existentes = await this.sql.consultarQuery<{ Id_Usuario: number; Nombre_Usuario: string; Correo: string }>(
