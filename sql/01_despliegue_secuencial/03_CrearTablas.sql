@@ -156,6 +156,17 @@ CREATE TABLE TB_Historial_Contrasenas (
 )
 GO
 
+-- Tabla 13C: Tokens Revocados (Revocacion persistente de tokens JWT)
+CREATE TABLE TB_Token_Revocado (
+    Id_Token INT IDENTITY(1,1) NOT NULL,
+    Token_Hash VARCHAR(64) NOT NULL,
+    Fecha_Expiracion DATETIME NOT NULL,
+    Fecha_Revocacion DATETIME NOT NULL DEFAULT GETDATE(),
+    CONSTRAINT PK_Token_Revocado PRIMARY KEY (Id_Token),
+    CONSTRAINT UQ_Token_Revocado_Hash UNIQUE (Token_Hash)
+)
+GO
+
 -- Tabla 14: Rol_Usuario (N:M)
 CREATE TABLE Rol_Usuario (
     Id_Rol_Usuario INT IDENTITY(1,1) NOT NULL,

@@ -11,11 +11,11 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest();
 
-    // 1. Verificación de lista negra (Revocación real de token en logout)
+    // 1. Verificación de lista negra (Revocación real de token en logout - Cache L1 + SQL L2)
     const authHeader = (request.headers as any)['authorization'] || '';
     const token = authHeader.replace(/^Bearer\s+/i, '').trim();
 
-    if (token && this.blacklist.estaRevocado(token)) {
+    if (token && (await this.blacklist.estaRevocado(token))) {
       throw new UnauthorizedException('El token ha sido revocado (sesión cerrada).');
     }
 

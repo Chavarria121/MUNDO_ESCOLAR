@@ -118,6 +118,11 @@ GRANT SELECT ON dbo.VW_CondicionesPagoActivas TO rol_db_aplicacion;
 DENY SELECT, INSERT, UPDATE, DELETE ON dbo.Usuario TO rol_db_aplicacion;
 DENY SELECT, INSERT, UPDATE, DELETE ON dbo.TB_Historial_Contrasenas TO rol_db_aplicacion;
 DENY SELECT, INSERT, UPDATE, DELETE ON dbo.Bitacora TO rol_db_aplicacion;
+DENY SELECT, INSERT, UPDATE, DELETE ON dbo.TB_Token_Revocado TO rol_db_aplicacion;
+
+-- 4.4 DENEGACIÓN EXPLÍCITA DE PROCEDIMIENTOS DE MANTENIMIENTO DEL MOTOR A LA APLICACIÓN
+-- El backend no debe invocar comprobaciones profundas de consistencia o reparación física
+DENY EXECUTE ON dbo.SP_DBA_VerificarIntegridadBD TO rol_db_aplicacion;
 
 -- Rol Vendedor: Permisos sobre ventas, clientes, inventario y facturación
 GRANT EXECUTE ON dbo.SP_Cliente_Consultar TO rol_db_vendedor;

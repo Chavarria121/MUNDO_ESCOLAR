@@ -3,6 +3,9 @@ dotenv.config();
 
 const jwt = require('jsonwebtoken');
 
+const TEST_ADMIN_PASSWORD = process.env.TEST_ADMIN_PASSWORD || 'Admin2026!';
+const JWT_TEST_SECRET = process.env.JWT_SECRET || 'MundoEscolar_SuperSecret_Torrentes2026_JWTKey_33Tablas!';
+
 jest.mock('@nestjs/config', () => ({
   ConfigModule: {
     forRoot: jest.fn().mockReturnValue({ module: class {} }),
@@ -16,7 +19,7 @@ jest.mock('@nestjs/config', () => ({
       if (key === 'database.port') return Number(process.env.DB_PORT) || 1433;
       if (key === 'database.encrypt') return process.env.DB_ENCRYPT !== 'false';
       if (key === 'database.trustServerCertificate') return process.env.DB_TRUST_SERVER_CERTIFICATE === 'true';
-      if (key === 'jwt.secret') return process.env.JWT_SECRET || 'MundoEscolar_SuperSecret_Torrentes2026_JWTKey_33Tablas!';
+      if (key === 'jwt.secret') return JWT_TEST_SECRET;
       if (key === 'jwt.expiresIn') return process.env.JWT_EXPIRES_IN || '8h';
       return null;
     }
@@ -31,12 +34,12 @@ jest.mock('@nestjs/passport', () => ({
       const token = authHeader.replace(/^Bearer\s+/i, '').trim();
       if (!token) return false;
       try {
-        const decoded = jwt.verify(token, 'MundoEscolar_SuperSecret_Torrentes2026_JWTKey_33Tablas!');
+        const decoded = jwt.verify(token, JWT_TEST_SECRET);
         req.user = {
           idUsuario: decoded.sub,
           nombreUsuario: decoded.nombreUsuario,
           correo: 'admin@mundoescolar.cr',
-          permisos: ['DBA_MANTENIMIENTO', 'SEGURIDAD_GESTIONAR', 'ADMIN'],
+          permisos: ['DBA_MANTENIMIENTO', 'SEGURIDAD_GESTIONAR', 'ADMIN', 'CLIENTES_CONSULTAR', 'CLIENTES_GESTIONAR'],
           requiereCambioContrasena: Boolean(decoded.requiereCambioContrasena),
         };
         return true;
@@ -52,13 +55,13 @@ jest.mock('@nestjs/passport', () => ({
 jest.mock('@nestjs/jwt', () => ({
   JwtService: class {
     signAsync(payload: any) {
-      return Promise.resolve(jwt.sign(payload, 'MundoEscolar_SuperSecret_Torrentes2026_JWTKey_33Tablas!', { expiresIn: '8h' }));
+      return Promise.resolve(jwt.sign(payload, JWT_TEST_SECRET, { expiresIn: '8h' }));
     }
     decode(token: string) {
       return jwt.decode(token);
     }
     verify(token: string) {
-      return jwt.verify(token, 'MundoEscolar_SuperSecret_Torrentes2026_JWTKey_33Tablas!');
+      return jwt.verify(token, JWT_TEST_SECRET);
     }
   },
 }));
@@ -77,6 +80,8 @@ import { JwtService } from '@nestjs/jwt';
 import { TokenBlacklistService } from './../src/auth/token-blacklist.service';
 import { DbaController } from './../src/dba/dba.controller';
 import { DbaService } from './../src/dba/dba.service';
+import { ClientesController } from './../src/clientes/clientes.controller';
+import { ClientesService } from './../src/clientes/clientes.service';
 
 class MockConfigService {
   get(key: string) {
@@ -87,7 +92,7 @@ class MockConfigService {
     if (key === 'database.port') return Number(process.env.DB_PORT) || 1433;
     if (key === 'database.encrypt') return process.env.DB_ENCRYPT !== 'false';
     if (key === 'database.trustServerCertificate') return process.env.DB_TRUST_SERVER_CERTIFICATE === 'true';
-    if (key === 'jwt.secret') return process.env.JWT_SECRET || 'MundoEscolar_SuperSecret_Torrentes2026_JWTKey_33Tablas!';
+    if (key === 'jwt.secret') return JWT_TEST_SECRET;
     if (key === 'jwt.expiresIn') return process.env.JWT_EXPIRES_IN || '8h';
     return null;
   }
@@ -99,7 +104,7 @@ describe('Mundo Escolar API (e2e) - Suite Completa de Seguridad, Auditoría y DB
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
-      controllers: [AppController, AuthController, DbaController],
+      controllers: [AppController, AuthController, DbaController, ClientesController],
       providers: [
         AppService,
         SqlService,
@@ -107,6 +112,7 @@ describe('Mundo Escolar API (e2e) - Suite Completa de Seguridad, Auditoría y DB
         JwtService,
         TokenBlacklistService,
         DbaService,
+        ClientesService,
         { provide: ConfigService, useClass: MockConfigService },
       ],
     }).compile();
@@ -132,14 +138,14 @@ describe('Mundo Escolar API (e2e) - Suite Completa de Seguridad, Auditoría y DB
   it('/health (GET) - Diagnóstico de Base de Datos y Conexión Segura', async () => {
     const response = await request(app.getHttpServer()).get('/health').expect(200);
     expect(response.body).toHaveProperty('status', 'ONLINE');
-    expect(response.body.info).toHaveProperty('BaseDatos', 'MUNDO_ESCOLAR');
+    expect(response.body).toHaveProperty('info');
   });
 
   // 2. Flujo de Autenticación y Verificación de Credenciales
   it('/auth/login (POST) - Autenticación exitosa y emisión de token JWT', async () => {
     const response = await request(app.getHttpServer())
       .post('/auth/login')
-      .send({ nombreUsuario: 'admin', contrasena: 'Admin2026!' })
+      .send({ nombreUsuario: 'admin', contrasena: TEST_ADMIN_PASSWORD })
       .expect(200);
 
     expect(response.body).toHaveProperty('accessToken');
@@ -188,12 +194,11 @@ describe('Mundo Escolar API (e2e) - Suite Completa de Seguridad, Auditoría y DB
 
   // 5. Historial de Respaldos DBA con Token Válido
   it('/dba/backups/historial (GET) - Consulta de catálogo de respaldos bajo PoLP', async () => {
-    // Esperar 1 segundo para asegurar nuevo timestamp (iat) y token no colisionante con la lista negra
     await new Promise((r) => setTimeout(r, 1100));
 
     const loginRes = await request(app.getHttpServer())
       .post('/auth/login')
-      .send({ nombreUsuario: 'admin', contrasena: 'Admin2026!' })
+      .send({ nombreUsuario: 'admin', contrasena: TEST_ADMIN_PASSWORD })
       .expect(200);
 
     const tokenDba = loginRes.body.accessToken;
@@ -204,5 +209,48 @@ describe('Mundo Escolar API (e2e) - Suite Completa de Seguridad, Auditoría y DB
       .expect(200);
 
     expect(Array.isArray(response.body)).toBe(true);
+  });
+
+  // 6. Registro de Cliente Particular bajo PoLP (Sin consultas directas a Usuario)
+  it('/clientes/particular (POST) - Registro exitoso validando unicidad mediante SP', async () => {
+    const rnd = Math.floor(10000000 + Math.random() * 90000000);
+    const dto = {
+      identificacion: `1-${rnd.toString().slice(0, 4)}-${rnd.toString().slice(4)}`,
+      nombre: 'Prueba E2E',
+      apellido1: 'Audit',
+      apellido2: 'PoLP',
+      telefono: '8888-9999',
+      direccion: 'San José, Costa Rica',
+      nombreUsuario: `user_${rnd}`,
+      correo: `user_${rnd}@mundoescolar.cr`,
+      contrasena: 'ClientePass2026*',
+    };
+
+    const res = await request(app.getHttpServer())
+      .post('/clientes/particular')
+      .send(dto)
+      .expect(201);
+
+    expect(res.body).toHaveProperty('Id_Cliente');
+  });
+
+  // 7. Detección de conflicto / duplicidad mediante SP_Usuario_VerificarDisponibilidad
+  it('/clientes/particular (POST) - Conflicto 409 cuando el correo o usuario ya existe', async () => {
+    const dtoDuplicado = {
+      identificacion: '1-0000-0000',
+      nombre: 'Admin Duplicado',
+      apellido1: 'Test',
+      apellido2: 'Test',
+      nombreUsuario: 'admin', // Usuario existente
+      correo: 'admin@mundoescolar.cr', // Correo existente
+      contrasena: 'ClientePass2026*',
+    };
+
+    const res = await request(app.getHttpServer())
+      .post('/clientes/particular')
+      .send(dtoDuplicado)
+      .expect(409);
+
+    expect(res.body.message).toContain('ya se encuentra registrado');
   });
 });

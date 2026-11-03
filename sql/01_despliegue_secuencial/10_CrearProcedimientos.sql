@@ -2329,7 +2329,7 @@ BEGIN
 END;
 GO
 
--- 55A. SP_Usuario_ObtenerPorId
+-- 55A. SP_Usuario_ObtenerPorId (Sin exponer hash de contrasena)
 CREATE OR ALTER PROCEDURE dbo.SP_Usuario_ObtenerPorId
     @Id_Usuario INT
 AS
@@ -2339,11 +2339,102 @@ BEGIN
         Id_Usuario,
         Nombre_Usuario,
         Correo,
-        Contrasena AS HashContrasena,
         Estado,
         ISNULL(Requiere_Cambio_Contrasena, 0) AS Requiere_Cambio_Contrasena
     FROM Usuario
     WHERE Id_Usuario = @Id_Usuario;
+END;
+GO
+
+-- 55A1. SP_Usuario_ObtenerHashParaCambio (Acotado estrictamente a verificacion de contrasena actual)
+CREATE OR ALTER PROCEDURE dbo.SP_Usuario_ObtenerHashParaCambio
+    @Id_Usuario INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT 
+        Id_Usuario,
+        Contrasena AS HashContrasena,
+        Estado
+    FROM Usuario
+    WHERE Id_Usuario = @Id_Usuario;
+END;
+GO
+
+-- 55A2. SP_Usuario_VerificarDisponibilidad (Permite a Clientes validar unicidad sin acceso directo a Usuario)
+CREATE OR ALTER PROCEDURE dbo.SP_Usuario_VerificarDisponibilidad
+    @Nombre_Usuario VARCHAR(50),
+    @Correo VARCHAR(150)
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT 
+        CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo.Usuario WHERE Nombre_Usuario = @Nombre_Usuario) THEN 1 ELSE 0 END AS BIT) AS NombreUsuarioExiste,
+        CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo.Usuario WHERE Correo = @Correo) THEN 1 ELSE 0 END AS BIT) AS CorreoExiste;
+END;
+GO
+
+-- 55A3. SP_Cliente_ActualizarCorreoUsuario (Encapsula la actualizacion de correo de cliente bajo PoLP)
+CREATE OR ALTER PROCEDURE dbo.SP_Cliente_ActualizarCorreoUsuario
+    @Id_Cliente INT,
+    @NuevoCorreo VARCHAR(150),
+    @Id_Usuario INT = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    BEGIN TRY
+        DECLARE @Id_Usuario_Cliente INT;
+        SELECT @Id_Usuario_Cliente = Id_Usuario FROM dbo.Cliente WHERE Id_Cliente = @Id_Cliente;
+
+        IF @Id_Usuario_Cliente IS NOT NULL
+        BEGIN
+            UPDATE dbo.Usuario
+            SET Correo = @NuevoCorreo
+            WHERE Id_Usuario = @Id_Usuario_Cliente;
+
+            INSERT INTO dbo.Bitacora (Id_Usuario, Accion, Tabla_Afectada, Id_Registro_Afectado, Fecha_Hora, Descripcion)
+            VALUES (@Id_Usuario, 'UPDATE', 'Usuario', @Id_Usuario_Cliente, GETDATE(), LEFT(CONCAT('Actualizacion de correo de cliente a: ', @NuevoCorreo), 200));
+
+            SELECT 1 AS Exito, 'Correo de usuario de cliente actualizado.' AS Mensaje;
+        END
+        ELSE
+        BEGIN
+            SELECT 0 AS Exito, 'Cliente no encontrado o sin usuario asociado.' AS Mensaje;
+        END
+    END TRY
+    BEGIN CATCH
+        THROW;
+    END CATCH
+END;
+GO
+
+-- 55A4. SP_Token_Revocar (Registro y purga de tokens JWT revocados)
+CREATE OR ALTER PROCEDURE dbo.SP_Token_Revocar
+    @Token_Hash VARCHAR(64),
+    @Fecha_Expiracion DATETIME
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DELETE FROM dbo.TB_Token_Revocado WHERE Fecha_Expiracion < GETDATE();
+
+    IF NOT EXISTS (SELECT 1 FROM dbo.TB_Token_Revocado WHERE Token_Hash = @Token_Hash)
+    BEGIN
+        INSERT INTO dbo.TB_Token_Revocado (Token_Hash, Fecha_Expiracion, Fecha_Revocacion)
+        VALUES (@Token_Hash, @Fecha_Expiracion, GETDATE());
+    END
+END;
+GO
+
+-- 55A5. SP_Token_VerificarRevocado (Comprobacion de validez de token persistente ante reinicios)
+CREATE OR ALTER PROCEDURE dbo.SP_Token_VerificarRevocado
+    @Token_Hash VARCHAR(64)
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT CAST(CASE WHEN EXISTS (
+        SELECT 1 FROM dbo.TB_Token_Revocado 
+        WHERE Token_Hash = @Token_Hash AND Fecha_Expiracion > GETDATE()
+    ) THEN 1 ELSE 0 END AS BIT) AS EstaRevocado;
 END;
 GO
 

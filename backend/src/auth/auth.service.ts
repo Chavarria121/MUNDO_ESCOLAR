@@ -97,9 +97,9 @@ export class AuthService {
       try {
         const decoded: any = this.jwtService.decode(token);
         const expMs = decoded?.exp ? decoded.exp * 1000 : Date.now() + 8 * 3600 * 1000;
-        this.tokenBlacklist.revocarToken(token, expMs);
+        await this.tokenBlacklist.revocarToken(token, expMs);
       } catch {
-        this.tokenBlacklist.revocarToken(token, Date.now() + 8 * 3600 * 1000);
+        await this.tokenBlacklist.revocarToken(token, Date.now() + 8 * 3600 * 1000);
       }
     }
     return { mensaje: 'Sesión cerrada exitosamente.' };
@@ -107,7 +107,7 @@ export class AuthService {
 
   /** Permite al usuario autenticado actualizar su contraseña bajo políticas estrictas e historial. */
   async cambiarContrasena(idUsuario: number, dto: CambiarContrasenaDto) {
-    const usuario = await this.sql.consultarSPUno<FilaAutenticacion>('SP_Usuario_ObtenerPorId', {
+    const usuario = await this.sql.consultarSPUno<FilaAutenticacion>('SP_Usuario_ObtenerHashParaCambio', {
       Id_Usuario: idUsuario,
     });
 

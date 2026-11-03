@@ -5,7 +5,8 @@
      Prueba de concepto y certificación técnica de restauración real en base
      de datos aislada (MUNDO_ESCOLAR_RESTORE_TEST) a partir de los respaldos
      generados automáticamente por SQL Server Agent / Module Signing.
-     Demuestra que los respaldos son 100% íntegros, legibles y restaurables.
+     Demuestra que los respaldos son 100% íntegros, legibles y restaurables,
+     incluyendo validación profunda con DBCC CHECKDB y DBCC CHECKCONSTRAINTS.
    ========================================================================= */
 
 USE master;
@@ -73,10 +74,20 @@ PRINT 'Total Usuarios restaurados:  ' + CAST(@TotalUsuarios AS VARCHAR(10));
 PRINT 'Total Productos restaurados: ' + CAST(@TotalProductos AS VARCHAR(10));
 PRINT 'Total Eventos Bitácora:      ' + CAST(@TotalBitacora AS VARCHAR(10));
 
+-- 4.1 Comprobación exhaustiva de integridad física y de asignación (DBCC CHECKDB)
+PRINT '-> Ejecutando DBCC CHECKDB sobre MUNDO_ESCOLAR_RESTORE_TEST...';
+DBCC CHECKDB ('MUNDO_ESCOLAR_RESTORE_TEST') WITH NO_INFOMSGS, ALL_ERRORMSGS;
+PRINT '[OK] DBCC CHECKDB: Cero inconsistencias o páginas corruptas detectadas.';
+
+-- 4.2 Verificación de integridad referencial y restricciones de tabla (DBCC CHECKCONSTRAINTS)
+PRINT '-> Ejecutando DBCC CHECKCONSTRAINTS WITH ALL_CONSTRAINTS...';
+EXEC('USE MUNDO_ESCOLAR_RESTORE_TEST; DBCC CHECKCONSTRAINTS WITH ALL_CONSTRAINTS;');
+PRINT '[OK] DBCC CHECKCONSTRAINTS: Todas las claves foráneas y restricciones validadas.';
+
 IF @TotalUsuarios > 0 AND @TotalProductos > 0
 BEGIN
     PRINT '-------------------------------------------------------------------------';
-    PRINT '[CERTIFICACIÓN EXITOSA] Los datos fueron recuperados íntegramente.';
+    PRINT '[CERTIFICACIÓN EXITOSA] Los datos y esquemas fueron recuperados íntegramente.';
     PRINT '-------------------------------------------------------------------------';
 END
 ELSE

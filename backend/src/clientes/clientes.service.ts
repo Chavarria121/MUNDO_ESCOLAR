@@ -127,14 +127,13 @@ export class ClientesService {
     }
     const passPlano = dto.contrasena.trim();
 
-    // 1. Verificar si el usuario o correo ya existe en Usuario
-    const existentes = await this.sql.consultarQuery<{ Id_Usuario: number; Nombre_Usuario: string; Correo: string }>(
-      `SELECT u.Id_Usuario, u.Nombre_Usuario, u.Correo
-       FROM Usuario u WHERE u.Nombre_Usuario = @nom OR u.Correo = @correo`,
-      { nom: nomUser, correo: correoUser },
+    // 1. Verificar disponibilidad de usuario/correo via SP (PoLP estricto sin SELECT directo)
+    const disp = await this.sql.consultarSPUno<{ NombreUsuarioExiste: boolean; CorreoExiste: boolean }>(
+      'SP_Usuario_VerificarDisponibilidad',
+      { Nombre_Usuario: nomUser, Correo: correoUser },
     );
 
-    if (existentes && existentes.length > 0) {
+    if (disp?.NombreUsuarioExiste || disp?.CorreoExiste) {
       throw new ConflictException(
         'El nombre de usuario o correo electrónico ya se encuentra registrado. Inicie sesión para vincular su cuenta.',
       );
@@ -179,14 +178,13 @@ export class ClientesService {
     }
     const passPlano = dto.contrasena.trim();
 
-    // 1. Verificar si el usuario o correo ya existe en Usuario
-    const existentes = await this.sql.consultarQuery<{ Id_Usuario: number; Nombre_Usuario: string; Correo: string }>(
-      `SELECT u.Id_Usuario, u.Nombre_Usuario, u.Correo
-       FROM Usuario u WHERE u.Nombre_Usuario = @nom OR u.Correo = @correo`,
-      { nom: nomUser, correo: correoUser },
+    // 1. Verificar disponibilidad de usuario/correo via SP (PoLP estricto sin SELECT directo)
+    const disp = await this.sql.consultarSPUno<{ NombreUsuarioExiste: boolean; CorreoExiste: boolean }>(
+      'SP_Usuario_VerificarDisponibilidad',
+      { Nombre_Usuario: nomUser, Correo: correoUser },
     );
 
-    if (existentes && existentes.length > 0) {
+    if (disp?.NombreUsuarioExiste || disp?.CorreoExiste) {
       throw new ConflictException(
         'El nombre de usuario o correo electrónico ya se encuentra registrado. Inicie sesión para vincular su cuenta institucional.',
       );
@@ -225,9 +223,10 @@ export class ClientesService {
 
   async actualizar(idCliente: number, dto: ActualizarClienteDto, idEjecutor: number) {
     if (dto.correo && dto.correo.trim()) {
-      await this.sql.consultarQuery(
-        `UPDATE Usuario SET Correo = @correo WHERE Id_Usuario = (SELECT Id_Usuario FROM Cliente WHERE Id_Cliente = @id)`,
-        { correo: dto.correo.trim(), id: idCliente },
+      await this.sql.consultarSPUno(
+        'SP_Cliente_ActualizarCorreoUsuario',
+        { Id_Cliente: idCliente, NuevoCorreo: dto.correo.trim() },
+        { idUsuario: idEjecutor },
       );
     }
     return this.sql.consultarSPUno(
