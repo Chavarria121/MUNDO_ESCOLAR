@@ -1,20 +1,28 @@
-﻿/* =========================================================================
+/* =========================================================================
    PROYECTO: LIBRERÍA Y PAPELERÍA MUNDO ESCOLAR
    ARCHIVO: Seguridad.sql (SCRIPT MAESTRO CONSOLIDADO DE SEGURIDAD Y PERMISOS)
    ESTILO: TORRENTES (SSMS 22)
    REFERENCIA DOCUMENTACIÓN: Sección 17.8.14 a 17.8.19 (Páginas 447-449)
    DESCRIPCIÓN: 
-     Configuración integral de la seguridad técnica en SQL Server:
+     Configuración integral de la seguridad técnica en SQL Server bajo PoLP:
        1. 14_CrearLogins.sql               (Cuentas de servidor)
        2. 15_CrearUsuariosBD.sql          (Usuarios de base de datos)
        3. 16_CrearRolesBD.sql              (Database Roles de SQL Server)
        4. 17_AsignarPermisos.sql           (Concesión de privilegios mínimos sobre SPs y Vistas)
        5. 18_DenegarPermisosSensibles.sql   (DENY explícito sobre tablas operativas y Bitácora)
        6. 19_ValidarPermisos.sql           (Comprobación técnica de la matriz de seguridad)
+       7. Module Signing                   (Certificados y firma criptográfica de SPs DBA)
    ========================================================================= */
 
 USE master
 GO
+
+/* =========================================================================
+   NOTA DE DESPLIEGUE SEGURO (SEPARACIÓN DE SECRETOS):
+   En entornos de producción, las contraseñas de logins y clave maestra deben
+   ser provistas externamente mediante variables de entorno en el pipeline de
+   despliegue (ej. sqlcmd -v APP_PWD="...") y nunca fijarse en código fuente.
+   ========================================================================= */
 
 -- 1. CREACIÓN DE LOGINS A NIVEL DE SERVIDOR (14_CrearLogins.sql)
 IF NOT EXISTS (SELECT 1 FROM sys.server_principals WHERE name = 'login_mundo_admin')
@@ -76,8 +84,8 @@ ALTER ROLE rol_db_vendedor ADD MEMBER usr_mundo_vendedor;
 ALTER ROLE rol_db_bodeguero ADD MEMBER usr_mundo_bodeguero;
 ALTER ROLE rol_db_contador ADD MEMBER usr_mundo_contador;
 ALTER ROLE rol_db_aplicacion ADD MEMBER usr_mundo_app;
--- Concesión de rol de operador eliminada por PoLP (Hallazgo S05).
--- La delegación de permisos de respaldo se realiza exclusivamente mediante Module Signing (Firma de SPs con certificados).
+-- Concesión de rol db_backupoperator eliminada por PoLP (Hallazgo S05).
+-- La delegación de permisos de respaldo se realiza exclusivamente mediante Module Signing.
 GO
 
 -- 4. CONCESIÓN DE PERMISOS MÍNIMOS (17_AsignarPermisos.sql)
@@ -86,9 +94,30 @@ GRANT EXECUTE ON SCHEMA::dbo TO rol_db_administrador;
 GRANT SELECT ON SCHEMA::dbo TO rol_db_administrador;
 GRANT VIEW DEFINITION TO rol_db_administrador;
 
--- Rol Aplicación (Sistema Backend)
+-- Rol Aplicación (Sistema Backend) - Principio de Menor Privilegio (PoLP estricto)
+-- 4.1 Permisos de ejecución de procedimientos almacenados de negocio
 GRANT EXECUTE ON SCHEMA::dbo TO rol_db_aplicacion;
-GRANT SELECT ON SCHEMA::dbo TO rol_db_aplicacion;
+
+-- 4.2 Concesión de lectura EXCLUSIVA sobre vistas operativas del negocio (Cero SELECT directo sobre tablas base)
+GRANT SELECT ON dbo.VW_ClientesActivos TO rol_db_aplicacion;
+GRANT SELECT ON dbo.VW_ProductosCatalogo TO rol_db_aplicacion;
+GRANT SELECT ON dbo.VW_ProductosInventario TO rol_db_aplicacion;
+GRANT SELECT ON dbo.VW_Ventas TO rol_db_aplicacion;
+GRANT SELECT ON dbo.VW_MetodosPagoActivos TO rol_db_aplicacion;
+GRANT SELECT ON dbo.VW_ProveedoresActivos TO rol_db_aplicacion;
+GRANT SELECT ON dbo.VW_ProductoProveedor TO rol_db_aplicacion;
+GRANT SELECT ON dbo.VW_MovimientosInventario TO rol_db_aplicacion;
+GRANT SELECT ON dbo.VW_ComprasDetalle TO rol_db_aplicacion;
+GRANT SELECT ON dbo.VW_Facturas TO rol_db_aplicacion;
+GRANT SELECT ON dbo.VW_Pagos TO rol_db_aplicacion;
+GRANT SELECT ON dbo.VW_CuentasPorCobrar TO rol_db_aplicacion;
+GRANT SELECT ON dbo.VW_CondicionesPagoActivas TO rol_db_aplicacion;
+
+-- 4.3 DENEGACIÓN EXPLÍCITA SOBRE TABLAS SENSIBLES
+-- Previene que conexiones directas bajo login_mundo_app consulten hashes de contraseñas o alteren bitácora
+DENY SELECT, INSERT, UPDATE, DELETE ON dbo.Usuario TO rol_db_aplicacion;
+DENY SELECT, INSERT, UPDATE, DELETE ON dbo.TB_Historial_Contrasenas TO rol_db_aplicacion;
+DENY SELECT, INSERT, UPDATE, DELETE ON dbo.Bitacora TO rol_db_aplicacion;
 
 -- Rol Vendedor: Permisos sobre ventas, clientes, inventario y facturación
 GRANT EXECUTE ON dbo.SP_Cliente_Consultar TO rol_db_vendedor;
@@ -185,7 +214,6 @@ WHERE pr.name IN ('rol_db_administrador', 'rol_db_vendedor', 'rol_db_bodeguero',
 ORDER BY pr.name, pe.state_desc, obj.name;
 GO
 
-
 -- 7. CONFIGURACIÓN DE MODULE SIGNING (DELEGACIÓN SEGURA DE RESPALDOS CON TRUSTWORTHY OFF)
 -- Satisface S04 y S05: El usuario usr_mundo_app NO requiere db_backupoperator ni TRUSTWORTHY ON.
 USE MUNDO_ESCOLAR;
@@ -223,9 +251,8 @@ EXEC sp_executesql @SqlExport;
 
 DECLARE @SqlImport NVARCHAR(MAX) = N'
 USE master;
-IF EXISTS (SELECT 1 FROM sys.certificates WHERE name = ''Cert_MundoEscolar_DBA'')
-    DROP CERTIFICATE Cert_MundoEscolar_DBA;
-CREATE CERTIFICATE Cert_MundoEscolar_DBA FROM FILE = ''' + @RutaCer + ''';
+IF NOT EXISTS (SELECT 1 FROM sys.certificates WHERE name = ''Cert_MundoEscolar_DBA'')
+    CREATE CERTIFICATE Cert_MundoEscolar_DBA FROM FILE = ''' + @RutaCer + ''';
 ';
 EXEC sp_executesql @SqlImport;
 GO
@@ -246,11 +273,12 @@ USE MUNDO_ESCOLAR;
 GO
 
 -- 7.6 Firmar criptográficamente los procedimientos de respaldo (SPs 69-72)
+-- Toda modificación a los SPs invalida su firma, por lo que este paso se ejecuta siempre al final del despliegue.
 ADD SIGNATURE TO dbo.SP_DBA_EjecutarBackupCompleto BY CERTIFICATE Cert_MundoEscolar_DBA;
 ADD SIGNATURE TO dbo.SP_DBA_EjecutarBackupDiferencial BY CERTIFICATE Cert_MundoEscolar_DBA;
 ADD SIGNATURE TO dbo.SP_DBA_EjecutarBackupLog BY CERTIFICATE Cert_MundoEscolar_DBA;
 ADD SIGNATURE TO dbo.SP_DBA_VerificarIntegridadBackup BY CERTIFICATE Cert_MundoEscolar_DBA;
 GO
 
-PRINT 'Seguridad y matriz de permisos instaladas exitosamente.';
+PRINT 'Seguridad y matriz de permisos PoLP instaladas exitosamente.';
 GO

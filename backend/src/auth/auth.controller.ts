@@ -1,5 +1,6 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Post, Req, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { Request } from 'express';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { CambiarContrasenaDto } from './dto/cambiar-contrasena.dto';
@@ -44,7 +45,7 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Permite al usuario autenticado cambiar su contraseña' })
   @ApiResponse({ status: 200, description: 'Contraseña actualizada exitosamente.' })
-  @ApiResponse({ status: 400, description: 'La nueva contraseña debe ser diferente o no cumple requisitos.' })
+  @ApiResponse({ status: 400, description: 'La nueva contraseña debe ser diferente o coincide con el historial.' })
   @ApiResponse({ status: 401, description: 'Contraseña actual incorrecta.' })
   cambiarContrasena(@UsuarioActual() usuario: UsuarioSesion, @Body() dto: CambiarContrasenaDto) {
     return this.authService.cambiarContrasena(usuario.idUsuario, dto);
@@ -54,9 +55,11 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Cierre de sesión seguro' })
+  @ApiOperation({ summary: 'Cierre de sesión seguro con invalidación de token JWT en lista negra' })
   @ApiResponse({ status: 200, description: 'Sesión cerrada exitosamente.' })
-  logout() {
-    return { mensaje: 'Sesión cerrada exitosamente.' };
+  logout(@Req() req: Request) {
+    const authHeader = (req.headers as any)['authorization'] || '';
+    const token = authHeader.replace(/^Bearer\s+/i, '').trim();
+    return this.authService.logout(token);
   }
 }

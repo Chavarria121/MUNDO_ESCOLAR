@@ -140,7 +140,19 @@ CREATE TABLE Usuario (
     Contrasena VARCHAR(255) NOT NULL,
     Fecha_Registro DATETIME NOT NULL,
     Estado BOOL NOT NULL,
+    Requiere_Cambio_Contrasena BIT NOT NULL DEFAULT 0,
     CONSTRAINT PK_Usuario PRIMARY KEY (Id_Usuario)
+)
+GO
+
+-- Tabla 13B: Historial de Contrasenas (Auditoria de seguridad y no repeticion de claves)
+CREATE TABLE TB_Historial_Contrasenas (
+    Id_Historial INT IDENTITY(1,1) NOT NULL,
+    Id_Usuario INT NOT NULL,
+    Contrasena_Hash VARCHAR(255) NOT NULL,
+    Fecha_Modificacion DATETIME NOT NULL DEFAULT GETDATE(),
+    CONSTRAINT PK_Historial_Contrasenas PRIMARY KEY (Id_Historial),
+    CONSTRAINT FK_Historial_Usuario FOREIGN KEY (Id_Usuario) REFERENCES Usuario(Id_Usuario)
 )
 GO
 

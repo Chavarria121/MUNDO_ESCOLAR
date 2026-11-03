@@ -5,6 +5,7 @@ import { SqlService } from '../database/sql.service';
 import { hashContrasena, verificarContrasena } from './password.util';
 import { JwtPayload, UsuarioSesion } from './interfaces/usuario-sesion.interface';
 import { CambiarContrasenaDto } from './dto/cambiar-contrasena.dto';
+import { TokenBlacklistService } from './token-blacklist.service';
 
 interface FilaAutenticacion {
   Id_Usuario: number;
@@ -12,6 +13,12 @@ interface FilaAutenticacion {
   Correo: string;
   HashContrasena: string;
   Estado: boolean;
+  Requiere_Cambio_Contrasena: boolean;
+}
+
+interface FilaHistorialContrasena {
+  Contrasena_Hash: string;
+  Fecha_Modificacion: Date;
 }
 
 @Injectable()
@@ -20,6 +27,7 @@ export class AuthService {
     private readonly sql: SqlService,
     private readonly jwtService: JwtService,
     private readonly config: ConfigService,
+    private readonly tokenBlacklist: TokenBlacklistService,
   ) {}
 
   /** SP_Permiso_ConsultarUsuario: permisos efectivos según Rol_Usuario + Rol_Permiso. */
@@ -31,12 +39,12 @@ export class AuthService {
   }
 
   async login(nombreUsuario: string, contrasena: string) {
-    // SP 55 del catálogo: entrega al backend solo lo mínimo para autenticar
+    // SP 55: entrega al backend únicamente lo necesario para autenticación segura
     const fila = await this.sql.consultarSPUno<FilaAutenticacion>('SP_Usuario_ObtenerParaAutenticacion', {
       Nombre_Usuario: nombreUsuario,
     });
 
-    // Mensaje genérico: no revelar si el usuario existe
+    // Mensaje genérico: no revelar existencia del usuario (mitigación de enumeración de cuentas)
     if (!fila || !verificarContrasena(contrasena, fila.HashContrasena)) {
       throw new UnauthorizedException('Usuario o contraseña incorrectos.');
     }
@@ -45,13 +53,23 @@ export class AuthService {
     }
 
     const permisos = await this.permisosDe(fila.Id_Usuario);
-    const payload: JwtPayload = { sub: fila.Id_Usuario, nombreUsuario: fila.Nombre_Usuario };
+    const requiereCambio = Boolean(fila.Requiere_Cambio_Contrasena);
+    const payload: JwtPayload = {
+      sub: fila.Id_Usuario,
+      nombreUsuario: fila.Nombre_Usuario,
+      requiereCambioContrasena: requiereCambio,
+    };
 
     return {
       accessToken: await this.jwtService.signAsync(payload),
       tipoToken: 'Bearer',
       expiraEn: this.config.get<string>('jwt.expiresIn'),
-      usuario: { idUsuario: fila.Id_Usuario, nombreUsuario: fila.Nombre_Usuario, correo: fila.Correo },
+      usuario: {
+        idUsuario: fila.Id_Usuario,
+        nombreUsuario: fila.Nombre_Usuario,
+        correo: fila.Correo,
+        requiereCambioContrasena: requiereCambio,
+      },
       permisos,
     };
   }
@@ -69,40 +87,62 @@ export class AuthService {
       nombreUsuario: fila.Nombre_Usuario,
       correo: fila.Correo,
       permisos: await this.permisosDe(fila.Id_Usuario),
+      requiereCambioContrasena: Boolean(fila.Requiere_Cambio_Contrasena),
     };
   }
 
-  /** Permite al usuario autenticado actualizar su contraseña de forma segura. */
+  /** Invalida criptográficamente el token JWT registrándolo en la lista negra. */
+  async logout(token: string) {
+    if (token) {
+      try {
+        const decoded: any = this.jwtService.decode(token);
+        const expMs = decoded?.exp ? decoded.exp * 1000 : Date.now() + 8 * 3600 * 1000;
+        this.tokenBlacklist.revocarToken(token, expMs);
+      } catch {
+        this.tokenBlacklist.revocarToken(token, Date.now() + 8 * 3600 * 1000);
+      }
+    }
+    return { mensaje: 'Sesión cerrada exitosamente.' };
+  }
+
+  /** Permite al usuario autenticado actualizar su contraseña bajo políticas estrictas e historial. */
   async cambiarContrasena(idUsuario: number, dto: CambiarContrasenaDto) {
-    const filas = await this.sql.consultarQuery<{ Id_Usuario: number; Contrasena: string; Estado: boolean }>(
-      'SELECT Id_Usuario, Contrasena, Estado FROM Usuario WHERE Id_Usuario = @id',
-      { id: idUsuario },
-    );
-    const usuario = filas[0];
+    const usuario = await this.sql.consultarSPUno<FilaAutenticacion>('SP_Usuario_ObtenerPorId', {
+      Id_Usuario: idUsuario,
+    });
+
     if (!usuario) {
       throw new UnauthorizedException('Usuario no encontrado.');
     }
     if (!usuario.Estado) {
       throw new ForbiddenException('El usuario se encuentra inactivo.');
     }
-    if (!verificarContrasena(dto.contrasenaActual, usuario.Contrasena)) {
+    if (!verificarContrasena(dto.contrasenaActual, usuario.HashContrasena)) {
       throw new UnauthorizedException('La contraseña actual es incorrecta.');
     }
     if (dto.contrasenaNueva === dto.contrasenaActual) {
       throw new BadRequestException('La nueva contraseña debe ser diferente a la contraseña actual.');
     }
 
-    const nuevaHash = hashContrasena(dto.contrasenaNueva);
-    await this.sql.consultarQuery(
-      'UPDATE Usuario SET Contrasena = @nuevaHash WHERE Id_Usuario = @id',
-      { nuevaHash, id: idUsuario },
-    );
+    // Comprobación de no repetición contra historial de contraseñas (TB_Historial_Contrasenas)
+    const historial = await this.sql.consultarSP<FilaHistorialContrasena>('SP_Usuario_ConsultarHistorialContrasenas', {
+      Id_Usuario: idUsuario,
+    });
 
-    await this.sql.consultarQuery(
-      `INSERT INTO Bitacora (Id_Usuario, Accion, Tabla_Afectada, Id_Registro_Afectado, Fecha_Hora, Descripcion)
-       VALUES (@id, 'PASSWORD_CHANGE', 'Usuario', @id, GETDATE(), 'Cambio de contraseña efectuado exitosamente.')`,
-      { id: idUsuario },
-    );
+    for (const h of historial) {
+      if (verificarContrasena(dto.contrasenaNueva, h.Contrasena_Hash)) {
+        throw new BadRequestException('La nueva contraseña no puede coincidir con ninguna de sus contraseñas anteriores.');
+      }
+    }
+
+    // Hasheo criptográfico moderno mediante bcrypt (12 rondas con sal)
+    const nuevaHash = hashContrasena(dto.contrasenaNueva);
+
+    // Actualización y registro forense mediante Stored Procedure seguro (PoLP)
+    await this.sql.consultarSPUno('SP_Usuario_CambiarContrasena', {
+      Id_Usuario: idUsuario,
+      NuevoHash: nuevaHash,
+    });
 
     return { mensaje: 'Contraseña actualizada exitosamente.' };
   }

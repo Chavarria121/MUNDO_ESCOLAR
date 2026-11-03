@@ -2322,9 +2322,77 @@ BEGIN
         Nombre_Usuario,
         Correo,
         Contrasena AS HashContrasena,
-        Estado
+        Estado,
+        ISNULL(Requiere_Cambio_Contrasena, 0) AS Requiere_Cambio_Contrasena
     FROM Usuario
     WHERE Nombre_Usuario = @Nombre_Usuario;
+END;
+GO
+
+-- 55A. SP_Usuario_ObtenerPorId
+CREATE OR ALTER PROCEDURE dbo.SP_Usuario_ObtenerPorId
+    @Id_Usuario INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT 
+        Id_Usuario,
+        Nombre_Usuario,
+        Correo,
+        Contrasena AS HashContrasena,
+        Estado,
+        ISNULL(Requiere_Cambio_Contrasena, 0) AS Requiere_Cambio_Contrasena
+    FROM Usuario
+    WHERE Id_Usuario = @Id_Usuario;
+END;
+GO
+
+-- 55B. SP_Usuario_CambiarContrasena
+CREATE OR ALTER PROCEDURE dbo.SP_Usuario_CambiarContrasena
+    @Id_Usuario INT,
+    @NuevoHash VARCHAR(255)
+AS
+BEGIN
+    SET NOCOUNT ON;
+    BEGIN TRANSACTION;
+    BEGIN TRY
+        -- Guardar clave actual en historial
+        INSERT INTO dbo.TB_Historial_Contrasenas (Id_Usuario, Contrasena_Hash, Fecha_Modificacion)
+        SELECT Id_Usuario, Contrasena, GETDATE()
+        FROM dbo.Usuario
+        WHERE Id_Usuario = @Id_Usuario;
+
+        -- Actualizar clave y resetear bandera de cambio obligatorio
+        UPDATE dbo.Usuario
+        SET Contrasena = @NuevoHash,
+            Requiere_Cambio_Contrasena = 0
+        WHERE Id_Usuario = @Id_Usuario;
+
+        -- Registrar en bitácora de auditoría
+        INSERT INTO dbo.Bitacora (Id_Usuario, Accion, Tabla_Afectada, Id_Registro_Afectado, Fecha_Hora, Descripcion)
+        VALUES (@Id_Usuario, 'PASSWORD_CHANGE', 'Usuario', @Id_Usuario, GETDATE(), 'Cambio de contraseña exitoso y restablecimiento de bandera obligatoria');
+
+        COMMIT TRANSACTION;
+    END TRY
+    BEGIN CATCH
+        ROLLBACK TRANSACTION;
+        THROW;
+    END CATCH;
+END;
+GO
+
+-- 55C. SP_Usuario_ConsultarHistorialContrasenas
+CREATE OR ALTER PROCEDURE dbo.SP_Usuario_ConsultarHistorialContrasenas
+    @Id_Usuario INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT TOP 5
+        Contrasena_Hash,
+        Fecha_Modificacion
+    FROM dbo.TB_Historial_Contrasenas
+    WHERE Id_Usuario = @Id_Usuario
+    ORDER BY Fecha_Modificacion DESC;
 END;
 GO
 
@@ -2621,7 +2689,7 @@ GO
 
 -- 69. SP_DBA_EjecutarBackupCompleto
 CREATE OR ALTER PROCEDURE dbo.SP_DBA_EjecutarBackupCompleto
-    @Id_Usuario INT = 1,
+    @Id_Usuario INT = NULL,
     @ArchivoGenerado NVARCHAR(500) = NULL OUTPUT
 AS
 BEGIN
@@ -2634,13 +2702,30 @@ BEGIN
         DECLARE @ArchivoBak NVARCHAR(500) = N'C:\SQLBackup\MUNDO_ESCOLAR_FULL_' + @FechaStr + N'_' + @GuidStr + N'.bak';
         SET @ArchivoGenerado = @ArchivoBak;
 
-        -- SINTAXIS NATIVA DIRECTA (Cero sp_executesql, sin FORMAT ni INIT destructivos)
-        BACKUP DATABASE MUNDO_ESCOLAR 
-        TO DISK = @ArchivoBak 
-        WITH COMPRESSION, STATS = 10;
+        DECLARE @EngineEdition INT = CAST(SERVERPROPERTY('EngineEdition') AS INT);
+        DECLARE @Edicion NVARCHAR(128) = CAST(SERVERPROPERTY('Edition') AS NVARCHAR(128));
+
+        -- Compatibilidad con SQL Server Express y Web: solo comprimir si la edición lo soporta
+        IF @EngineEdition <> 4 AND @Edicion NOT LIKE '%Express%' AND @Edicion NOT LIKE '%Web%'
+        BEGIN
+            BACKUP DATABASE MUNDO_ESCOLAR 
+            TO DISK = @ArchivoBak 
+            WITH COMPRESSION, STATS = 10, CHECKSUM;
+        END
+        ELSE
+        BEGIN
+            BACKUP DATABASE MUNDO_ESCOLAR 
+            TO DISK = @ArchivoBak 
+            WITH STATS = 10, CHECKSUM;
+        END
+
+        DECLARE @DescDetalle VARCHAR(200) = CASE 
+            WHEN @Id_Usuario IS NULL THEN LEFT(CONCAT('Respaldo completo automático (SQL Agent) en: ', @ArchivoBak), 200)
+            ELSE LEFT(CONCAT('Respaldo completo manual en: ', @ArchivoBak), 200)
+        END;
 
         INSERT INTO Bitacora (Id_Usuario, Accion, Tabla_Afectada, Id_Registro_Afectado, Fecha_Hora, Descripcion)
-        VALUES (@Id_Usuario, 'BACKUP_FULL', 'DATABASE', 0, GETDATE(), LEFT(CONCAT('Respaldo completo generado en: ', @ArchivoBak), 200));
+        VALUES (@Id_Usuario, 'BACKUP_FULL', 'DATABASE', 0, GETDATE(), @DescDetalle);
 
         SELECT 'Respaldo completo generado exitosamente.' AS Mensaje, @ArchivoBak AS Archivo;
     END TRY
@@ -2654,7 +2739,7 @@ GO
 
 -- 70. SP_DBA_EjecutarBackupDiferencial
 CREATE OR ALTER PROCEDURE dbo.SP_DBA_EjecutarBackupDiferencial
-    @Id_Usuario INT = 1,
+    @Id_Usuario INT = NULL,
     @ArchivoGenerado NVARCHAR(500) = NULL OUTPUT
 AS
 BEGIN
@@ -2667,13 +2752,30 @@ BEGIN
         DECLARE @ArchivoBak NVARCHAR(500) = N'C:\SQLBackup\MUNDO_ESCOLAR_DIFF_' + @FechaStr + N'_' + @GuidStr + N'.bak';
         SET @ArchivoGenerado = @ArchivoBak;
 
-        -- SINTAXIS NATIVA DIRECTA (Cero sp_executesql)
-        BACKUP DATABASE MUNDO_ESCOLAR 
-        TO DISK = @ArchivoBak 
-        WITH DIFFERENTIAL, COMPRESSION, STATS = 10;
+        DECLARE @EngineEdition INT = CAST(SERVERPROPERTY('EngineEdition') AS INT);
+        DECLARE @Edicion NVARCHAR(128) = CAST(SERVERPROPERTY('Edition') AS NVARCHAR(128));
+
+        -- Compatibilidad con SQL Server Express y Web
+        IF @EngineEdition <> 4 AND @Edicion NOT LIKE '%Express%' AND @Edicion NOT LIKE '%Web%'
+        BEGIN
+            BACKUP DATABASE MUNDO_ESCOLAR 
+            TO DISK = @ArchivoBak 
+            WITH DIFFERENTIAL, COMPRESSION, STATS = 10, CHECKSUM;
+        END
+        ELSE
+        BEGIN
+            BACKUP DATABASE MUNDO_ESCOLAR 
+            TO DISK = @ArchivoBak 
+            WITH DIFFERENTIAL, STATS = 10, CHECKSUM;
+        END
+
+        DECLARE @DescDetalle VARCHAR(200) = CASE 
+            WHEN @Id_Usuario IS NULL THEN LEFT(CONCAT('Respaldo diferencial automático (SQL Agent) en: ', @ArchivoBak), 200)
+            ELSE LEFT(CONCAT('Respaldo diferencial manual en: ', @ArchivoBak), 200)
+        END;
 
         INSERT INTO Bitacora (Id_Usuario, Accion, Tabla_Afectada, Id_Registro_Afectado, Fecha_Hora, Descripcion)
-        VALUES (@Id_Usuario, 'BACKUP_DIFF', 'DATABASE', 0, GETDATE(), LEFT(CONCAT('Respaldo diferencial generado en: ', @ArchivoBak), 200));
+        VALUES (@Id_Usuario, 'BACKUP_DIFF', 'DATABASE', 0, GETDATE(), @DescDetalle);
 
         SELECT 'Respaldo diferencial generado exitosamente.' AS Mensaje, @ArchivoBak AS Archivo;
     END TRY
@@ -2687,7 +2789,7 @@ GO
 
 -- 71. SP_DBA_EjecutarBackupLog
 CREATE OR ALTER PROCEDURE dbo.SP_DBA_EjecutarBackupLog
-    @Id_Usuario INT = 1,
+    @Id_Usuario INT = NULL,
     @ArchivoGenerado NVARCHAR(500) = NULL OUTPUT
 AS
 BEGIN
@@ -2709,13 +2811,30 @@ BEGIN
         DECLARE @ArchivoTrn NVARCHAR(500) = N'C:\SQLBackup\MUNDO_ESCOLAR_LOG_' + @FechaStr + N'_' + @GuidStr + N'.trn';
         SET @ArchivoGenerado = @ArchivoTrn;
 
-        -- SINTAXIS NATIVA DIRECTA (Cero sp_executesql)
-        BACKUP LOG MUNDO_ESCOLAR 
-        TO DISK = @ArchivoTrn 
-        WITH COMPRESSION, STATS = 10;
+        DECLARE @EngineEdition INT = CAST(SERVERPROPERTY('EngineEdition') AS INT);
+        DECLARE @Edicion NVARCHAR(128) = CAST(SERVERPROPERTY('Edition') AS NVARCHAR(128));
+
+        -- Compatibilidad con SQL Server Express y Web: solo comprimir si la edición lo soporta
+        IF @EngineEdition <> 4 AND @Edicion NOT LIKE '%Express%' AND @Edicion NOT LIKE '%Web%'
+        BEGIN
+            BACKUP LOG MUNDO_ESCOLAR 
+            TO DISK = @ArchivoTrn 
+            WITH COMPRESSION, STATS = 10, CHECKSUM;
+        END
+        ELSE
+        BEGIN
+            BACKUP LOG MUNDO_ESCOLAR 
+            TO DISK = @ArchivoTrn 
+            WITH STATS = 10, CHECKSUM;
+        END
+
+        DECLARE @DescDetalle VARCHAR(200) = CASE 
+            WHEN @Id_Usuario IS NULL THEN LEFT(CONCAT('Respaldo de log automático (SQL Agent) en: ', @ArchivoTrn), 200)
+            ELSE LEFT(CONCAT('Respaldo de log manual en: ', @ArchivoTrn), 200)
+        END;
 
         INSERT INTO Bitacora (Id_Usuario, Accion, Tabla_Afectada, Id_Registro_Afectado, Fecha_Hora, Descripcion)
-        VALUES (@Id_Usuario, 'BACKUP_LOG', 'DATABASE', 0, GETDATE(), LEFT(CONCAT('Respaldo de log generado en: ', @ArchivoTrn), 200));
+        VALUES (@Id_Usuario, 'BACKUP_LOG', 'DATABASE', 0, GETDATE(), @DescDetalle);
 
         SELECT 'Respaldo de Log ejecutado exitosamente.' AS Mensaje, @ArchivoTrn AS Archivo;
     END TRY
@@ -2730,7 +2849,7 @@ GO
 -- 72. SP_DBA_VerificarIntegridadBackup
 CREATE OR ALTER PROCEDURE dbo.SP_DBA_VerificarIntegridadBackup
     @RutaArchivoBak NVARCHAR(500),
-    @Id_Usuario INT = 1
+    @Id_Usuario INT = NULL
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -2761,7 +2880,6 @@ GO
 
 -- 73. SP_DBA_VerificarIntegridadBD
 CREATE OR ALTER PROCEDURE dbo.SP_DBA_VerificarIntegridadBD
-WITH EXECUTE AS OWNER
 AS
 BEGIN
     SET NOCOUNT ON;

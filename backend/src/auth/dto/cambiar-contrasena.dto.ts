@@ -13,3 +13,4 @@ export class CambiarContrasenaDto {
   @MinLength(8, { message: 'La nueva contraseña debe contener al menos 8 caracteres.' })
   contrasenaNueva: string;
 }
+

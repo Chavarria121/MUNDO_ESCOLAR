@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Global, Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
@@ -7,7 +7,9 @@ import { AuthService } from './auth.service';
 import { JwtStrategy } from './jwt.strategy';
 import { PermisosGuard } from './guards/permisos.guard';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import { TokenBlacklistService } from './token-blacklist.service';
 
+@Global()
 @Module({
   imports: [
     PassportModule.register({ defaultStrategy: 'jwt' }),
@@ -21,7 +23,7 @@ import { JwtAuthGuard } from './guards/jwt-auth.guard';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, JwtAuthGuard, PermisosGuard],
-  exports: [AuthService, JwtAuthGuard, PermisosGuard],
+  providers: [AuthService, JwtStrategy, JwtAuthGuard, PermisosGuard, TokenBlacklistService],
+  exports: [AuthService, JwtAuthGuard, PermisosGuard, TokenBlacklistService],
 })
 export class AuthModule {}

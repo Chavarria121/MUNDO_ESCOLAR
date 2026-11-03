@@ -7,6 +7,8 @@
        1. Respaldo Completo Semanal (Domingos 01:00 AM)
        2. Respaldo Diferencial Diario (Lunes a Sábado 01:00 AM)
        3. Respaldo de Registro de Transacciones (Cada 4 horas si modelo es FULL)
+     En SQL Server Express, el script desactiva su ejecución mediante SET NOEXEC ON
+     para no generar errores en msdb y redirige a Windows Task Scheduler.
    ========================================================================= */
 
 USE msdb;
@@ -18,13 +20,15 @@ PRINT '=========================================================================
 PRINT '   CONFIGURACIÓN DE JOBS DE SQL SERVER AGENT - MUNDO ESCOLAR';
 PRINT '=========================================================================';
 
--- 1. Validar si SQL Server Agent está habilitado y disponible
+-- 1. Validar si SQL Server Agent está habilitado y disponible (Express NO soporta Agent)
 IF NOT EXISTS (SELECT 1 FROM sys.configurations WHERE name = 'Agent XPs' AND value_in_use = 1)
+   OR CAST(SERVERPROPERTY('EngineEdition') AS INT) = 4
+   OR CAST(SERVERPROPERTY('Edition') AS NVARCHAR(128)) LIKE '%Express%'
 BEGIN
-    PRINT '[AVISO] SQL Server Agent no está activo o se ejecuta sobre SQL Server Express.';
-    PRINT '-> Para automatizar en SQL Server Express, utilice el script de Windows Task Scheduler:';
+    PRINT '[AVISO] SQL Server Agent no está activo o la instancia es SQL Server Express.';
+    PRINT '-> Omitiendo creación de jobs. Para SQL Server Express utilice:';
     PRINT '   sql/03_administracion_mantenimiento/04_Automatizacion_Respaldos_TaskScheduler.bat';
-    RETURN;
+    SET NOEXEC ON; -- Desactiva la ejecución de los lotes subsiguientes de forma segura
 END;
 GO
 
@@ -39,7 +43,7 @@ IF EXISTS (SELECT job_id FROM msdb.dbo.sysjobs WHERE name = N'MundoEscolar_Backu
 EXEC sp_add_job 
     @job_name = N'MundoEscolar_Backup_Semanal',
     @enabled = 1,
-    @description = N'Respaldo completo de la base de datos MUNDO_ESCOLAR con compresión.',
+    @description = N'Respaldo completo de la base de datos MUNDO_ESCOLAR con compatibilidad multi-edición y GUID.',
     @category_name = N'Database Maintenance',
     @job_id = @JobId OUTPUT;
 
@@ -47,7 +51,7 @@ EXEC sp_add_jobstep
     @job_name = N'MundoEscolar_Backup_Semanal',
     @step_name = N'Ejecutar Backup Completo',
     @subsystem = N'TSQL',
-    @command = N'EXEC MUNDO_ESCOLAR.dbo.SP_DBA_EjecutarBackupCompleto;',
+    @command = N'EXEC MUNDO_ESCOLAR.dbo.SP_DBA_EjecutarBackupCompleto @Id_Usuario = NULL;',
     @database_name = N'MUNDO_ESCOLAR',
     @on_success_action = 1,
     @on_fail_action = 2;
@@ -78,7 +82,7 @@ IF EXISTS (SELECT job_id FROM msdb.dbo.sysjobs WHERE name = N'MundoEscolar_Backu
 EXEC sp_add_job 
     @job_name = N'MundoEscolar_Backup_Diferencial',
     @enabled = 1,
-    @description = N'Respaldo diferencial diario de MUNDO_ESCOLAR.',
+    @description = N'Respaldo diferencial diario de MUNDO_ESCOLAR con compatibilidad multi-edición y GUID.',
     @category_name = N'Database Maintenance',
     @job_id = @JobId OUTPUT;
 
@@ -86,7 +90,7 @@ EXEC sp_add_jobstep
     @job_name = N'MundoEscolar_Backup_Diferencial',
     @step_name = N'Ejecutar Backup Diferencial',
     @subsystem = N'TSQL',
-    @command = N'EXEC MUNDO_ESCOLAR.dbo.SP_DBA_EjecutarBackupDiferencial;',
+    @command = N'EXEC MUNDO_ESCOLAR.dbo.SP_DBA_EjecutarBackupDiferencial @Id_Usuario = NULL;',
     @database_name = N'MUNDO_ESCOLAR',
     @on_success_action = 1,
     @on_fail_action = 2;
@@ -117,7 +121,7 @@ IF EXISTS (SELECT job_id FROM msdb.dbo.sysjobs WHERE name = N'MundoEscolar_Backu
 EXEC sp_add_job 
     @job_name = N'MundoEscolar_Backup_Log',
     @enabled = 1,
-    @description = N'Respaldo periódico del log de transacciones de MUNDO_ESCOLAR.',
+    @description = N'Respaldo periódico del log de transacciones de MUNDO_ESCOLAR con compatibilidad multi-edición y GUID.',
     @category_name = N'Database Maintenance',
     @job_id = @JobId OUTPUT;
 
@@ -125,7 +129,7 @@ EXEC sp_add_jobstep
     @job_name = N'MundoEscolar_Backup_Log',
     @step_name = N'Ejecutar Backup Log',
     @subsystem = N'TSQL',
-    @command = N'EXEC MUNDO_ESCOLAR.dbo.SP_DBA_EjecutarBackupLog;',
+    @command = N'EXEC MUNDO_ESCOLAR.dbo.SP_DBA_EjecutarBackupLog @Id_Usuario = NULL;',
     @database_name = N'MUNDO_ESCOLAR',
     @on_success_action = 1,
     @on_fail_action = 2;
@@ -147,4 +151,8 @@ PRINT '[OK] Job "MundoEscolar_Backup_Log" configurado (Cada 4 horas).';
 PRINT '=========================================================================';
 PRINT '   TODOS LOS JOBS FUERON CONFIGURADOS EXITOSAMENTE';
 PRINT '=========================================================================';
+GO
+
+-- Restaurar ejecución normal de lotes
+SET NOEXEC OFF;
 GO
