@@ -101,6 +101,9 @@ export default function ClientesPage() {
     direccion: '',
     estado: true,
     contrasenaPortal: '',
+    limiteCreditoMonto: 300000,
+    limiteCreditoFacturas: 3,
+    permiteCredito: true,
   });
 
   // Formulario Nueva Condición de Crédito
@@ -364,6 +367,9 @@ export default function ClientesPage() {
       telefono: cliente.Telefono || '',
       direccion: cliente.Direccion || '',
       estado: cliente.Estado ?? true,
+      limiteCreditoMonto: cliente.Limite_Credito_Monto ?? 300000,
+      limiteCreditoFacturas: cliente.Limite_Credito_Facturas ?? 3,
+      permiteCredito: cliente.Permite_Credito ?? true,
     });
     setModalEditarAbierto(true);
 
@@ -389,6 +395,9 @@ export default function ClientesPage() {
           telefono: d.Telefono ?? prev.telefono,
           direccion: d.Direccion ?? prev.direccion,
           estado: d.Estado ?? prev.estado,
+          limiteCreditoMonto: d.Limite_Credito_Monto ?? prev.limiteCreditoMonto,
+          limiteCreditoFacturas: d.Limite_Credito_Facturas ?? prev.limiteCreditoFacturas,
+          permiteCredito: d.Permite_Credito ?? prev.permiteCredito,
         }));
       }
       setCondicionesCliente(resCond.data || []);
@@ -407,6 +416,9 @@ export default function ClientesPage() {
         telefono: formEditar.telefono || undefined,
         direccion: formEditar.direccion || undefined,
         estado: formEditar.estado,
+        limiteCreditoMonto: Number(formEditar.limiteCreditoMonto || 300000),
+        limiteCreditoFacturas: Number(formEditar.limiteCreditoFacturas || 3),
+        permiteCredito: Boolean(formEditar.permiteCredito),
       };
 
       if (clienteSeleccionado.Tipo_Cliente === 'Particular') {
@@ -781,14 +793,21 @@ export default function ClientesPage() {
                       </td>
 
                       <td className="py-3 px-4 whitespace-nowrap">
-                        {cli.Tiene_Credito_Activo ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 font-bold text-[10px]">
-                            <CreditCard className="w-3 h-3" />
-                            {cli.Condiciones_Autorizadas}
-                          </span>
-                        ) : (
-                          <span className="text-slate-400 text-[10px]">Solo Contado</span>
-                        )}
+                        <div className="flex flex-col gap-1 items-start">
+                          {cli.Tiene_Credito_Activo ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 font-bold text-[10px]">
+                              <CreditCard className="w-3 h-3" />
+                              {cli.Condiciones_Autorizadas}
+                            </span>
+                          ) : (
+                            <span className="text-slate-400 text-[10px]">Solo Contado</span>
+                          )}
+                          {Boolean(cli.Es_Moroso) && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-rose-100 text-rose-800 border border-rose-300 font-black text-[9.5px]">
+                              ⛔ Moroso Bloqueado
+                            </span>
+                          )}
+                        </div>
                       </td>
 
                       <td className="py-3 px-4 text-center">
@@ -1404,6 +1423,86 @@ export default function ClientesPage() {
                   <p className="text-[11px]">
                     Un mismo cliente puede disponer <strong>simultáneamente de Contado y varias líneas de crédito</strong> (15, 30 o 45 días). Puede activar o deshabilitar cualquier condición para habilitar compras a crédito en el POS.
                   </p>
+                </div>
+
+                {/* Configuración de Umbrales Comerciales de Crédito */}
+                <div className="bg-[#FAF7F0] border border-[#DFD5C4] rounded-xl p-4 space-y-3">
+                  <div className="flex items-center justify-between border-b border-[#DFD5C4] pb-2">
+                    <div>
+                      <h4 className="font-bold text-[#132B20] text-xs flex items-center gap-1.5">
+                        <CreditCard className="w-4 h-4 text-amber-600" />
+                        Capacidad y Umbrales de Crédito Comercial
+                      </h4>
+                      <p className="text-[10px] text-slate-500">
+                        Parámetros comerciales configurables por cliente (Límites de riesgo y morosidad)
+                      </p>
+                    </div>
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                      formEditar.permiteCredito 
+                        ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' 
+                        : 'bg-rose-100 text-rose-800 border border-rose-200'
+                    }`}>
+                      {formEditar.permiteCredito ? 'Crédito Habilitado' : 'Crédito Inhabilitado'}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2 pt-1">
+                    <input
+                      type="checkbox"
+                      id="chkPermiteCredito"
+                      checked={formEditar.permiteCredito}
+                      onChange={(e) => setFormEditar({ ...formEditar, permiteCredito: e.target.checked })}
+                      className="w-4 h-4 rounded text-[#2D5E46] focus:ring-[#2D5E46] cursor-pointer"
+                    />
+                    <label htmlFor="chkPermiteCredito" className="font-bold text-[#132B20] cursor-pointer text-xs">
+                      Permitir ventas a crédito para este cliente (Sujeto a validación de morosidad y límites)
+                    </label>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3 pt-1">
+                    <div>
+                      <label className="block font-bold text-[#132B20] text-[11px] mb-1">
+                        Límite Máximo de Saldo a Crédito (CRC)
+                      </label>
+                      <input
+                        type="number"
+                        value={formEditar.limiteCreditoMonto}
+                        onChange={(e) => setFormEditar({ ...formEditar, limiteCreditoMonto: e.target.value })}
+                        placeholder="300000"
+                        className="w-full px-3 py-2 bg-white border border-[#DFD5C4] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#2D5E46] font-bold text-xs"
+                      />
+                      <span className="text-[9.5px] text-slate-400 mt-0.5 block">
+                        Default: ₡300.000 (Tope total de endeudamiento)
+                      </span>
+                    </div>
+
+                    <div>
+                      <label className="block font-bold text-[#132B20] text-[11px] mb-1">
+                        Máx. Facturas a Crédito Simultáneas
+                      </label>
+                      <input
+                        type="number"
+                        value={formEditar.limiteCreditoFacturas}
+                        onChange={(e) => setFormEditar({ ...formEditar, limiteCreditoFacturas: e.target.value })}
+                        placeholder="3"
+                        className="w-full px-3 py-2 bg-white border border-[#DFD5C4] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#2D5E46] font-bold text-xs"
+                      />
+                      <span className="text-[9.5px] text-slate-400 mt-0.5 block">
+                        Default: 3 compras simultáneas sin saldar
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="pt-2 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={guardarEdicion}
+                      disabled={guardando}
+                      className="px-4 py-1.5 bg-[#1A3D2F] hover:bg-[#132B20] text-white font-bold rounded-lg text-xs transition shadow-sm disabled:opacity-50"
+                    >
+                      {guardando ? 'Guardando...' : 'Guardar Umbrales de Crédito'}
+                    </button>
+                  </div>
                 </div>
 
                 <div className="space-y-2">

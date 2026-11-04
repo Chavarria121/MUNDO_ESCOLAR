@@ -167,13 +167,13 @@ export default function Sidebar({ activeSection, onSelectSection, isCollapsed, o
       <div className="p-3 border-t border-[#2D5E46]/40 bg-[#0F2219]">
         <div className={`flex items-center gap-3 p-2 rounded-xl bg-[#132B20] border border-[#2D5E46]/50 ${isCollapsed ? 'justify-center' : ''}`}>
           <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-[#C05A3E] to-[#5C3622] border border-[#FAF7F0]/30 flex items-center justify-center font-bold text-[#FAF7F0] text-xs shrink-0 shadow-sm">
-            {user?.nombreUsuario?.substring(0, 2).toUpperCase() || 'ME'}
+            {(user?.primerNombre || user?.nombreUsuario || 'ME').substring(0, 2).toUpperCase()}
           </div>
 
           {!isCollapsed && (
             <div className="flex-1 min-w-0">
-              <p className="text-xs font-semibold text-[#FAF7F0] truncate">{user?.nombreUsuario || 'Usuario'}</p>
-              <p className="text-[10px] text-[#DFD5C4]/80 truncate">{user?.roles?.join(', ') || 'Operador'}</p>
+              <p className="text-xs font-semibold text-[#FAF7F0] truncate">{user?.primerNombre || user?.nombreUsuario || 'Usuario'}</p>
+              <p className="text-[10px] text-[#DFD5C4]/80 truncate">{user?.roles?.join(', ') || (user?.esCliente ? 'Cliente' : 'Operador')}</p>
             </div>
           )}
 

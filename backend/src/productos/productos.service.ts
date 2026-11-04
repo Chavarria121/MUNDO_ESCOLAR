@@ -45,6 +45,7 @@ export class ProductosService {
         Precio_Venta: dto.precioVenta,
         Stock_Inicial: dto.stockInicial ?? 0,
         Punto_Reorden: dto.puntoReorden ?? 0,
+        Porcentaje_IVA: dto.porcentajeIva !== undefined ? dto.porcentajeIva : 13.00,
       },
       { idUsuario: idEjecutor, salidas: { Id_Producto_Nuevo: 'int' } },
     );
@@ -61,6 +62,7 @@ export class ProductosService {
         Descripcion: dto.descripcion ?? null,
         Precio_Venta: dto.precioVenta,
         Punto_Reorden: dto.puntoReorden,
+        Porcentaje_IVA: dto.porcentajeIva !== undefined ? dto.porcentajeIva : null,
         Estado: dto.estado,
       },
       { idUsuario: idEjecutor },

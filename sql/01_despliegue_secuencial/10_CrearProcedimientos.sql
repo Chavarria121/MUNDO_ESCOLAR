@@ -29,7 +29,8 @@ CREATE OR ALTER PROCEDURE dbo.SP_Usuario_Crear
     @Nombre_Usuario VARCHAR(50),
     @Correo VARCHAR(150),
     @ContrasenaHash VARCHAR(255),
-    @Id_Usuario_Nuevo INT OUTPUT
+    @Id_Usuario_Nuevo INT OUTPUT,
+    @Requiere_Cambio_Contrasena BIT = 0
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -45,8 +46,8 @@ BEGIN
         IF EXISTS (SELECT 1 FROM Usuario WHERE Correo = @Correo)
             THROW 50005, 'El correo electrónico ya se encuentra registrado.', 1;
 
-        INSERT INTO Usuario (Nombre_Usuario, Correo, Contrasena, Fecha_Registro, Estado)
-        VALUES (LTRIM(RTRIM(@Nombre_Usuario)), LTRIM(RTRIM(@Correo)), @ContrasenaHash, GETDATE(), 1);
+        INSERT INTO Usuario (Nombre_Usuario, Correo, Contrasena, Fecha_Registro, Estado, Requiere_Cambio_Contrasena)
+        VALUES (LTRIM(RTRIM(@Nombre_Usuario)), LTRIM(RTRIM(@Correo)), @ContrasenaHash, GETDATE(), 1, ISNULL(@Requiere_Cambio_Contrasena, 0));
 
         SET @Id_Usuario_Nuevo = SCOPE_IDENTITY();
         SELECT @Id_Usuario_Nuevo AS Id_Usuario, 'Usuario creado satisfactoriamente.' AS Mensaje;
@@ -1484,6 +1485,129 @@ GO
 -- MÓDULO 6: VENTAS COMERCIALES (SPs 38 a 46)
 -- =========================================================================
 
+-- 37B. SP_Cliente_ValidarCapacidadCredito (Reglas de crédito configurable y morosidad endurecida)
+CREATE OR ALTER PROCEDURE dbo.SP_Cliente_ValidarCapacidadCredito
+    @Id_Cliente INT,
+    @Id_Condicion_Pago INT = NULL,
+    @MontoVenta DECIMAL(12, 2) = 0.00
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    -- 1. POLÍTICA ENDURECIDA DE MOROSIDAD (BLOQUEO TOTAL)
+    -- Si el cliente tiene al menos una factura con Saldo_Pendiente > 0 y Fecha_Vencimiento < GETDATE()
+    -- se prohíbe terminantemente cualquier venta: NI A CRÉDITO NI DE CONTADO.
+    IF EXISTS (
+        SELECT 1 FROM dbo.Factura f
+        INNER JOIN dbo.Venta v ON f.Id_Venta = v.Id_Venta
+        WHERE v.Id_Cliente = @Id_Cliente 
+          AND f.Saldo_Pendiente > 0.00 
+          AND f.Fecha_Vencimiento < GETDATE()
+    )
+    BEGIN
+        THROW 50182, 'Operación bloqueada: El cliente presenta facturas vencidas en estado MOROSO. Se prohíbe cualquier venta (crédito o contado) hasta la cancelación total de los saldos en mora.', 1;
+    END;
+
+    -- 2. Si no se especificó condición de pago o es de contado (Dias_Credito = 0), pasa la validación crediticia
+    IF @Id_Condicion_Pago IS NULL RETURN;
+
+    DECLARE @DiasCredito INT = (SELECT Dias_Credito FROM dbo.Condicion_Pago WHERE Id_Condicion_Pago = @Id_Condicion_Pago);
+    IF ISNULL(@DiasCredito, 0) = 0 RETURN;
+
+    -- 3. UMBRALES DE CRÉDITO CONFIGURABLES (PLAZOS DE 15, 30 O 45 DÍAS)
+    DECLARE @LimiteMonto DECIMAL(12, 2), @LimiteFacturas INT, @PermiteCredito BIT;
+    SELECT 
+        @LimiteMonto = ISNULL(Limite_Credito_Monto, 300000.00),
+        @LimiteFacturas = ISNULL(Limite_Credito_Facturas, 3),
+        @PermiteCredito = ISNULL(Permite_Credito, 1)
+    FROM dbo.Cliente
+    WHERE Id_Cliente = @Id_Cliente;
+
+    IF @PermiteCredito = 0
+        THROW 50183, 'El cliente no tiene autorizada la línea de crédito comercial.', 1;
+
+    -- Validar cantidad máxima de compras simultáneas activas
+    DECLARE @FacturasActivas INT;
+    SELECT @FacturasActivas = COUNT(*)
+    FROM dbo.Factura f
+    INNER JOIN dbo.Venta v ON f.Id_Venta = v.Id_Venta
+    WHERE v.Id_Cliente = @Id_Cliente AND f.Saldo_Pendiente > 0.00;
+
+    IF @FacturasActivas >= @LimiteFacturas
+        THROW 50180, 'Límite de compras a crédito alcanzado: El cliente ya posee el máximo de facturas activas permitidas.', 1;
+
+    -- Validar tope de deuda acumulada
+    DECLARE @SaldoActual DECIMAL(12, 2);
+    SELECT @SaldoActual = ISNULL(SUM(f.Saldo_Pendiente), 0.00)
+    FROM dbo.Factura f
+    INNER JOIN dbo.Venta v ON f.Id_Venta = v.Id_Venta
+    WHERE v.Id_Cliente = @Id_Cliente AND f.Saldo_Pendiente > 0.00;
+
+    IF (@SaldoActual + @MontoVenta) > @LimiteMonto
+        THROW 50181, 'Límite de crédito excedido: El monto total adeudado sobrepasaría el límite crediticio autorizado.', 1;
+END;
+GO
+
+
+-- 37C. SP_Cliente_ConsultarEstadoCredito (Consulta de capacidad crediticia y morosidad sin acceso directo a tablas)
+CREATE OR ALTER PROCEDURE dbo.SP_Cliente_ConsultarEstadoCredito
+    @Id_Cliente INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DECLARE @Nombre VARCHAR(200);
+    DECLARE @LimiteMonto DECIMAL(12, 2) = 300000.00;
+    DECLARE @LimiteFacturas INT = 3;
+    DECLARE @PermiteCredito BIT = 1;
+
+    SELECT 
+        @Nombre = CASE 
+            WHEN tc.Nombre = 'Particular' THEN CONCAT(cp.Nombre, ' ', cp.Apellido1, ISNULL(' ' + cp.Apellido2, ''))
+            ELSE ci.Razon_Social 
+        END,
+        @LimiteMonto = ISNULL(c.Limite_Credito_Monto, 300000.00),
+        @LimiteFacturas = ISNULL(c.Limite_Credito_Facturas, 3),
+        @PermiteCredito = ISNULL(c.Permite_Credito, 1)
+    FROM dbo.Cliente c
+    INNER JOIN dbo.Tipo_Cliente tc ON c.Id_Tipo_Cliente = tc.Id_Tipo_Cliente
+    LEFT JOIN dbo.Cliente_Particular cp ON c.Id_Cliente = cp.Id_Cliente
+    LEFT JOIN dbo.Cliente_Institucional ci ON c.Id_Cliente = ci.Id_Cliente
+    WHERE c.Id_Cliente = @Id_Cliente;
+
+    DECLARE @FacturasActivas INT = 0;
+    DECLARE @SaldoAdeudado DECIMAL(12, 2) = 0.00;
+    DECLARE @FacturasVencidas INT = 0;
+
+    SELECT 
+        @FacturasActivas = COUNT(*),
+        @SaldoAdeudado = ISNULL(SUM(f.Saldo_Pendiente), 0.00),
+        @FacturasVencidas = ISNULL(SUM(CASE WHEN f.Fecha_Vencimiento < GETDATE() AND f.Saldo_Pendiente > 0.00 THEN 1 ELSE 0 END), 0)
+    FROM dbo.Factura f
+    INNER JOIN dbo.Venta v ON f.Id_Venta = v.Id_Venta
+    WHERE v.Id_Cliente = @Id_Cliente AND f.Saldo_Pendiente > 0.00;
+
+    DECLARE @EsMoroso BIT = CASE WHEN @FacturasVencidas > 0 THEN 1 ELSE 0 END;
+    DECLARE @CreditoDisponible DECIMAL(12, 2) = CASE WHEN @LimiteMonto > @SaldoAdeudado THEN @LimiteMonto - @SaldoAdeudado ELSE 0.00 END;
+    DECLARE @PuedeComprarCredito BIT = CASE WHEN @EsMoroso = 0 AND @PermiteCredito = 1 AND @FacturasActivas < @LimiteFacturas AND @SaldoAdeudado < @LimiteMonto THEN 1 ELSE 0 END;
+    DECLARE @PuedeComprarContado BIT = CASE WHEN @EsMoroso = 0 THEN 1 ELSE 0 END;
+
+    SELECT 
+        @Id_Cliente AS Id_Cliente,
+        ISNULL(@Nombre, 'Cliente No Encontrado') AS Nombre_Cliente,
+        @EsMoroso AS Es_Moroso,
+        @FacturasVencidas AS Facturas_Vencidas,
+        @FacturasActivas AS Facturas_Activas_Credito,
+        @LimiteFacturas AS Limite_Facturas,
+        @SaldoAdeudado AS Saldo_Adeudado,
+        @LimiteMonto AS Limite_Credito_Monto,
+        @CreditoDisponible AS Credito_Disponible,
+        @PermiteCredito AS Permite_Credito,
+        @PuedeComprarCredito AS Puede_Comprar_Credito,
+        @PuedeComprarContado AS Puede_Comprar_Contado;
+END;
+GO
+
 -- 38. SP_Venta_Crear
 CREATE OR ALTER PROCEDURE dbo.SP_Venta_Crear
     @Id_Cliente INT,
@@ -1821,7 +1945,7 @@ BEGIN
 
         -- Generar automáticamente factura asociada
         DECLARE @IdFacturaNueva INT;
-        EXEC dbo.SP_Factura_Generar @Id_Venta, @IdFacturaNueva OUTPUT;
+        EXEC dbo.SP_Factura_Generar @Id_Venta = @Id_Venta, @Id_Factura_Nueva = @IdFacturaNueva OUTPUT;
 
         COMMIT TRANSACTION;
         SELECT @Id_Venta AS Id_Venta, @IdFacturaNueva AS Id_Factura, 'Venta confirmada, stock rebajado y factura generada con éxito.' AS Mensaje;
@@ -1954,8 +2078,8 @@ GO
 -- 47. SP_Factura_Generar (I-10 / F6: Clave Numérica Fiscal DGT Simulada)
 CREATE OR ALTER PROCEDURE dbo.SP_Factura_Generar
     @Id_Venta INT,
-    @Clave_Numerica_Fiscal VARCHAR(50) = NULL,
-    @Id_Factura_Nueva INT OUTPUT
+    @Id_Factura_Nueva INT OUTPUT,
+    @Clave_Numerica_Fiscal VARCHAR(50) = NULL
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -2317,15 +2441,23 @@ CREATE OR ALTER PROCEDURE dbo.SP_Usuario_ObtenerParaAutenticacion
 AS
 BEGIN
     SET NOCOUNT ON;
-    SELECT 
-        Id_Usuario,
-        Nombre_Usuario,
-        Correo,
-        Contrasena AS HashContrasena,
-        Estado,
-        ISNULL(Requiere_Cambio_Contrasena, 0) AS Requiere_Cambio_Contrasena
-    FROM Usuario
-    WHERE Nombre_Usuario = @Nombre_Usuario;
+    SELECT TOP 1
+        u.Id_Usuario,
+        u.Nombre_Usuario,
+        u.Correo,
+        u.Contrasena AS HashContrasena,
+        u.Estado,
+        ISNULL(u.Requiere_Cambio_Contrasena, 0) AS Requiere_Cambio_Contrasena
+    FROM dbo.Usuario u
+    LEFT JOIN dbo.Cliente c ON u.Id_Usuario = c.Id_Usuario
+    LEFT JOIN dbo.Cliente_Particular cp ON c.Id_Cliente = cp.Id_Cliente
+    LEFT JOIN dbo.Cliente_Institucional ci ON c.Id_Cliente = ci.Id_Cliente
+    WHERE u.Nombre_Usuario = @Nombre_Usuario
+       OR u.Correo = @Nombre_Usuario
+       OR cp.Identificacion = @Nombre_Usuario
+       OR REPLACE(cp.Identificacion, '-', '') = REPLACE(@Nombre_Usuario, '-', '')
+       OR ci.Cedula_Juridica = @Nombre_Usuario
+       OR REPLACE(ci.Cedula_Juridica, '-', '') = REPLACE(@Nombre_Usuario, '-', '');
 END;
 GO
 

@@ -91,13 +91,13 @@ export default function Navbar({ activeSection, isSidebarCollapsed }) {
         {/* User Role Badge */}
         <div className="flex items-center gap-2 pl-3 border-l border-[#DFD5C4]">
           <div className="text-right">
-            <p className="text-xs font-bold text-[#132B20] leading-none">{user?.nombreUsuario}</p>
+            <p className="text-xs font-bold text-[#132B20] leading-none">{user?.primerNombre || user?.nombreUsuario}</p>
             <span className="text-[10px] font-bold text-[#C05A3E] uppercase tracking-wider">
-              {user?.roles?.[0] || 'Usuario'}
+              {user?.roles?.[0] || (user?.esCliente ? 'Cliente' : 'Usuario')}
             </span>
           </div>
           <div className="w-8 h-8 rounded-full bg-[#132B20] text-[#FAF7F0] font-bold flex items-center justify-center text-xs border border-[#2D5E46]">
-            {user?.nombreUsuario?.substring(0, 2).toUpperCase()}
+            {(user?.primerNombre || user?.nombreUsuario || 'ME').substring(0, 2).toUpperCase()}
           </div>
         </div>
       </div>

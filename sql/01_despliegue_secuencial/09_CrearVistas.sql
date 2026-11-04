@@ -69,7 +69,17 @@ SELECT
         FROM Cliente_Condicion_Pago ccp 
         INNER JOIN Condicion_Pago cpago ON ccp.Id_Condicion_Pago = cpago.Id_Condicion_Pago
         WHERE ccp.Id_Cliente = c.Id_Cliente AND ccp.Estado = 1
-    ) AS Condiciones_Autorizadas
+    ) AS Condiciones_Autorizadas,
+    c.Limite_Credito_Monto,
+    c.Limite_Credito_Facturas,
+    c.Permite_Credito,
+    CAST(CASE WHEN EXISTS (
+        SELECT 1 FROM dbo.Factura f 
+        INNER JOIN dbo.Venta v ON f.Id_Venta = v.Id_Venta 
+        WHERE v.Id_Cliente = c.Id_Cliente 
+          AND f.Saldo_Pendiente > 0.00 
+          AND f.Fecha_Vencimiento < GETDATE()
+    ) THEN 1 ELSE 0 END AS BIT) AS Es_Moroso
 FROM Cliente c
 INNER JOIN Tipo_Cliente tc ON c.Id_Tipo_Cliente = tc.Id_Tipo_Cliente
 LEFT JOIN Cliente_Particular cp ON c.Id_Cliente = cp.Id_Cliente
@@ -152,6 +162,7 @@ SELECT
     p.Nombre,
     p.Descripcion,
     p.Precio_Venta,
+    p.Porcentaje_IVA,
     p.Estado
 FROM Producto p
 INNER JOIN Categoria c ON p.Id_Categoria = c.Id_Categoria;
@@ -168,6 +179,7 @@ SELECT
     p.Precio_Venta,
     p.Stock_Actual,
     p.Punto_Reorden,
+    p.Porcentaje_IVA,
     CASE 
         WHEN p.Stock_Actual = 0 THEN 'Agotado'
         WHEN p.Stock_Actual <= p.Punto_Reorden THEN 'Bajo Reorden'

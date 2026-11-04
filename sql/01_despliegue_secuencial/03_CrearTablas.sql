@@ -210,6 +210,9 @@ CREATE TABLE Cliente (
     Telefono VARCHAR(30) NOT NULL,
     Direccion VARCHAR(200) NOT NULL,
     Estado BOOL NOT NULL,
+    Limite_Credito_Monto DECIMAL(12,2) NOT NULL DEFAULT 300000.00,
+    Limite_Credito_Facturas INT NOT NULL DEFAULT 3,
+    Permite_Credito BOOL NOT NULL DEFAULT 1,
     CONSTRAINT PK_Cliente PRIMARY KEY (Id_Cliente)
 )
 GO
@@ -297,6 +300,7 @@ CREATE TABLE Producto (
     Stock_Actual INT NOT NULL,
     Punto_Reorden INT NOT NULL,
     Estado BOOL NOT NULL,
+    Porcentaje_IVA DECIMAL(5,2) NOT NULL DEFAULT 13.00,
     CONSTRAINT PK_Producto PRIMARY KEY (Id_Producto)
 )
 GO
@@ -380,6 +384,7 @@ CREATE TABLE Venta_Producto (
     Cantidad INT NOT NULL,
     Precio_Unitario DECIMAL(12,2) NOT NULL,
     Subtotal DECIMAL(12,2) NOT NULL,
+    Porcentaje_IVA DECIMAL(5,2) NOT NULL DEFAULT 13.00,
     CONSTRAINT PK_Venta_Producto PRIMARY KEY (Id_Venta_Producto)
 ) ON [FG_TRANSACCIONAL]
 GO

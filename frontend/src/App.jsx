@@ -14,6 +14,7 @@ import ReportesPage from './pages/ReportesPage';
 import AuditoriaPage from './pages/AuditoriaPage';
 import DbaPage from './pages/DbaPage';
 import PortalClientePage from './pages/PortalClientePage';
+import ModalPrimerIngresoCambioClave from './components/auth/ModalPrimerIngresoCambioClave';
 
 class ErrorBoundary extends React.Component {
   constructor(props) {
@@ -74,6 +75,7 @@ export default function App() {
   if (user?.esCliente) {
     return (
       <ErrorBoundary key="portal-cliente">
+        <ModalPrimerIngresoCambioClave />
         <PortalClientePage />
       </ErrorBoundary>
     );
@@ -81,6 +83,7 @@ export default function App() {
 
   return (
     <AppLayout activeSection={activeSection} onSelectSection={setActiveSection}>
+      <ModalPrimerIngresoCambioClave />
       <ErrorBoundary key={activeSection}>
         {activeSection === 'dashboard' && (
           <DashboardOverview onNavigate={setActiveSection} />

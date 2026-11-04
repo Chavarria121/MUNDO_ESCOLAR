@@ -19,11 +19,13 @@ import { AuditoriaModule } from './auditoria/auditoria.module';
 import { BiModule } from './bi/bi.module';
 import { ReportesModule } from './reportes/reportes.module';
 import { DbaModule } from './dba/dba.module';
+import { EmailModule } from './email/email.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true, load: [configuration] }),
     DatabaseModule,
+    EmailModule,
     AuthModule,
     SeguridadModule,
     CatalogosModule,

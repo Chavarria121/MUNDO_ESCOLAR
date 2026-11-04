@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
 import { SqlService } from '../database/sql.service';
-import { hashContrasena } from '../auth/password.util';
+import { hashContrasena, generarContrasenaTemporal } from '../auth/password.util';
+import { EmailService } from '../email/email.service';
 import {
   ActualizarClienteDto,
   AutorizarCondicionPagoDto,
@@ -11,7 +12,7 @@ import {
 
 @Injectable()
 export class ClientesService {
-  constructor(private readonly sql: SqlService) {}
+  constructor(private readonly sql: SqlService, private readonly emailService: EmailService) {}
 
   
   async consultarTse(identificacion: string) {
@@ -121,11 +122,15 @@ export class ClientesService {
   async crearParticular(dto: CrearClienteParticularDto, idEjecutor: number | null = null) {
     const num = dto.identificacion.replace(/[^0-9]/g, '');
     const nomUser = (dto.nombreUsuario && dto.nombreUsuario.trim()) || ('cli.' + num);
-    const correoUser = (dto.correo && dto.correo.trim()) || (nomUser + '@mundoescolar.cr');
-    if (!dto.contrasena || !dto.contrasena.trim()) {
-      throw new BadRequestException('La contraseña es obligatoria para registrar un cliente.');
+    const correoUser = dto.correo.trim();
+
+    let passPlano = dto.contrasena?.trim();
+    let esTemporal = false;
+    if (!passPlano) {
+      passPlano = generarContrasenaTemporal();
+      esTemporal = true;
     }
-    const passPlano = dto.contrasena.trim();
+    const requiereCambio = esTemporal ? 1 : 0;
 
     // 1. Verificar disponibilidad de usuario/correo via SP (PoLP estricto sin SELECT directo)
     const disp = await this.sql.consultarSPUno<{ NombreUsuarioExiste: boolean; CorreoExiste: boolean }>(
@@ -146,6 +151,7 @@ export class ClientesService {
         Nombre_Usuario: nomUser,
         Correo: correoUser,
         ContrasenaHash: hashContrasena(passPlano),
+        Requiere_Cambio_Contrasena: requiereCambio,
       },
       { idUsuario: idEjecutor, salidas: { Id_Usuario_Nuevo: 'int' } },
     );
@@ -166,17 +172,33 @@ export class ClientesService {
       },
       { idUsuario: idEjecutor, salidas: { Id_Cliente_Nuevo: 'int' } },
     );
+
+    // 4. Despacho asíncrono no bloqueante del correo de bienvenida
+    this.emailService
+      .enviarCredencialesBienvenida({
+        destinatario: correoUser,
+        nombreCliente: dto.nombre + ' ' + dto.apellido1,
+        identificacion: dto.identificacion,
+        nombreUsuario: nomUser,
+        contrasenaTemporal: passPlano,
+      })
+      .catch((err) => console.error('Error enviando correo de bienvenida (Particular):', err));
+
     return r.filas[0] ?? { Id_Cliente: r.salida.Id_Cliente_Nuevo };
   }
 
   async crearInstitucional(dto: CrearClienteInstitucionalDto, idEjecutor: number | null = null) {
     const num = dto.cedulaJuridica.replace(/[^0-9]/g, '');
     const nomUser = (dto.nombreUsuario && dto.nombreUsuario.trim()) || ('inst.' + num);
-    const correoUser = (dto.correoContacto && dto.correoContacto.trim()) || (nomUser + '@mundoescolar.cr');
-    if (!dto.contrasena || !dto.contrasena.trim()) {
-      throw new BadRequestException('La contraseña es obligatoria para registrar un cliente.');
+    const correoUser = dto.correoContacto.trim();
+
+    let passPlano = dto.contrasena?.trim();
+    let esTemporal = false;
+    if (!passPlano) {
+      passPlano = generarContrasenaTemporal();
+      esTemporal = true;
     }
-    const passPlano = dto.contrasena.trim();
+    const requiereCambio = esTemporal ? 1 : 0;
 
     // 1. Verificar disponibilidad de usuario/correo via SP (PoLP estricto sin SELECT directo)
     const disp = await this.sql.consultarSPUno<{ NombreUsuarioExiste: boolean; CorreoExiste: boolean }>(
@@ -197,6 +219,7 @@ export class ClientesService {
         Nombre_Usuario: nomUser,
         Correo: correoUser,
         ContrasenaHash: hashContrasena(passPlano),
+        Requiere_Cambio_Contrasena: requiereCambio,
       },
       { idUsuario: idEjecutor, salidas: { Id_Usuario_Nuevo: 'int' } },
     );
@@ -210,14 +233,26 @@ export class ClientesService {
         Cedula_Juridica: dto.cedulaJuridica,
         Razon_Social: dto.razonSocial,
         Nombre_Contacto: dto.nombreContacto || 'Encargado de Compras',
-        Telefono_Contacto: dto.telefonoContacto || dto.telefono || '2550-0000',
-        Correo_Contacto: dto.correoContacto || 'contacto@institucion.cr',
-        Telefono: dto.telefono || '2550-0000',
+        Telefono_Contacto: dto.telefonoContacto || dto.telefono || 'Sin registrar',
+        Correo_Contacto: correoUser,
+        Telefono: dto.telefono || 'Sin registrar',
         Direccion: dto.direccion || 'Sin asignar',
         Id_Usuario: idUsuarioCliente,
       },
       { idUsuario: idEjecutor, salidas: { Id_Cliente_Nuevo: 'int' } },
     );
+
+    // 4. Despacho asíncrono no bloqueante del correo de bienvenida institucional
+    this.emailService
+      .enviarCredencialesBienvenida({
+        destinatario: correoUser,
+        nombreCliente: dto.razonSocial,
+        identificacion: dto.cedulaJuridica,
+        nombreUsuario: nomUser,
+        contrasenaTemporal: passPlano,
+      })
+      .catch((err) => console.error('Error enviando correo de bienvenida (Institucional):', err));
+
     return r.filas[0] ?? { Id_Cliente: r.salida.Id_Cliente_Nuevo };
   }
 
@@ -246,6 +281,29 @@ export class ClientesService {
       },
       { idUsuario: idEjecutor },
     );
+  }
+
+  async consultarEstadoCredito(idCliente: number) {
+    const res = await this.sql.consultarSP<any>('SP_Cliente_ConsultarEstadoCredito', {
+      Id_Cliente: idCliente,
+    });
+    const c = res[0];
+    if (!c) return null;
+
+    return {
+      idCliente: c.Id_Cliente,
+      nombreCliente: c.Nombre_Cliente,
+      esMoroso: Boolean(c.Es_Moroso),
+      facturasVencidas: Number(c.Facturas_Vencidas || 0),
+      facturasActivasCredito: Number(c.Facturas_Activas_Credito || 0),
+      limiteFacturas: Number(c.Limite_Facturas || 3),
+      saldoAdeudado: Number(c.Saldo_Adeudado || 0),
+      limiteCreditoMonto: Number(c.Limite_Credito_Monto || 300000),
+      creditoDisponible: Number(c.Credito_Disponible || 0),
+      permiteCredito: Boolean(c.Permite_Credito),
+      puedeComprarCredito: Boolean(c.Puede_Comprar_Credito),
+      puedeComprarContado: Boolean(c.Puede_Comprar_Contado),
+    };
   }
 
   consultarCondicionesPago(idCliente: number) {

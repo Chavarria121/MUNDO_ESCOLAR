@@ -11,4 +11,9 @@ export class UsuarioSesion {
   correo: string;
   permisos: string[];
   requiereCambioContrasena: boolean;
+  esCliente?: boolean;
+  roles?: string[];
+  primerNombre?: string;
+  nombreCompleto?: string;
+  clienteData?: any;
 }

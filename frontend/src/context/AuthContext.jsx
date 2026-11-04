@@ -31,27 +31,19 @@ export function AuthProvider({ children }) {
       const accessToken = data.accessToken;
       const permisos = data.permisos || [];
 
-      // Verificar si el usuario autenticado corresponde a un Cliente (Actor Cliente de la Tesis)
-      let esCliente = false;
-      let clienteData = null;
-      try {
-        const portalRes = await api.get('/clientes/portal/mi-perfil', {
-          headers: { Authorization: `Bearer ${accessToken}` }
-        });
-        if (portalRes.data?.esCliente) {
-          esCliente = true;
-          clienteData = portalRes.data.perfil;
-        }
-      } catch (e) {}
+      // El backend determina autoritativamente si el usuario es un Cliente
+      const esCliente = Boolean(data.usuario?.esCliente);
+      const roles = data.usuario?.roles?.length
+        ? data.usuario.roles
+        : (esCliente ? ['Cliente'] : (permisos.includes('SEGURIDAD_GESTIONAR') ? ['Administrador'] : ['Usuario']));
 
       const userData = {
         ...data.usuario,
         permisos,
-        roles: esCliente
-          ? ['Cliente']
-          : data.usuario.roles || (permisos.includes('SEGURIDAD_GESTIONAR') ? ['Administrador'] : ['Cajero']),
+        roles,
         esCliente,
-        clienteData,
+        clienteData: data.usuario?.clienteData || null,
+        primerNombre: data.usuario?.primerNombre || (esCliente ? 'Cliente' : data.usuario?.nombreUsuario),
       };
 
       localStorage.setItem('token', accessToken);
@@ -75,6 +67,15 @@ export function AuthProvider({ children }) {
     setUser(null);
   };
 
+  const actualizarUsuario = (cambios) => {
+    setUser((prev) => {
+      if (!prev) return null;
+      const actualizado = { ...prev, ...cambios };
+      localStorage.setItem('user', JSON.stringify(actualizado));
+      return actualizado;
+    });
+  };
+
   // Verificación dinámica de permisos RBAC obtenidos de SQL Server
   const tienePermiso = (permiso) => {
     if (!user || !user.permisos) return false;
@@ -93,6 +94,8 @@ export function AuthProvider({ children }) {
       value={{
         token,
         user,
+        setUser,
+        actualizarUsuario,
         isAuthenticated: !!token && !!user,
         loading,
         login,

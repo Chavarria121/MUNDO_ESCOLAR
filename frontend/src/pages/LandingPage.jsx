@@ -254,7 +254,7 @@ export default function LandingPage({ onGoToLogin }) {
     setLoadingRegistro(true);
     try {
       await api.post('/clientes/particular', formParticular);
-      toast.success('¡Registro Exitoso!', 'Su perfil de cliente ha sido registrado en Librería Mundo Escolar.');
+      toast.success('¡Registro Exitoso!', 'Su cuenta ha sido creada. Le enviamos un correo con su contraseña temporal de acceso.');
       setShowRegistroModal(false);
       ultimaCedulaConsultada.current = '';
       setFormParticular({
@@ -282,7 +282,7 @@ export default function LandingPage({ onGoToLogin }) {
     setLoadingRegistro(true);
     try {
       await api.post('/clientes/institucional', formInstitucional);
-      toast.success('¡Solicitud Institucional Enviada!', 'El centro educativo ha sido registrado con éxito.');
+      toast.success('¡Registro Exitoso!', 'Su institución ha sido registrada. Le enviamos un correo con sus credenciales de acceso.');
       setShowRegistroModal(false);
       setFormInstitucional({
         razonSocial: '',
@@ -394,7 +394,7 @@ export default function LandingPage({ onGoToLogin }) {
                 className="w-full sm:w-auto flex items-center justify-center gap-2 px-6 py-3.5 rounded-2xl bg-[#FAF7F0]/10 hover:bg-[#FAF7F0]/20 text-sm font-bold text-[#FAF7F0] border border-[#FAF7F0]/20 transition"
               >
                 <Lock className="w-4 h-4 text-[#DFD5C4]" />
-                <span>Acceso a Colaboradores</span>
+                <span>Acceso al Sistema</span>
               </button>
             </div>
 

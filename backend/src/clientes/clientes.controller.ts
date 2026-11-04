@@ -102,6 +102,15 @@ export class ClientesController {
     return this.clientes.actualizar(id, dto, u.idUsuario);
   }
 
+  @Get(':id/estado-credito')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, PermisosGuard)
+  @RequierePermisos(PERMISOS.CLIENTES_CONSULTAR)
+  @ApiOperation({ summary: 'Consultar estado de crédito y morosidad de un cliente' })
+  consultarEstadoCredito(@Param('id', ParseIntPipe) id: number) {
+    return this.clientes.consultarEstadoCredito(id);
+  }
+
   @Get(':id/condiciones-pago')
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, PermisosGuard)

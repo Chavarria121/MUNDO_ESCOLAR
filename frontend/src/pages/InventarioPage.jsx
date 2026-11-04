@@ -24,6 +24,7 @@ import {
   Sparkles,
   RotateCcw,
   Building2,
+  Percent,
 } from 'lucide-react';
 import api from '../api/client';
 import { useAuth } from '../context/AuthContext';
@@ -71,6 +72,7 @@ export default function InventarioPage() {
     precioVenta: '',
     stockInicial: 0,
     puntoReorden: 10,
+    porcentajeIva: 13,
     estado: true,
   });
 
@@ -315,6 +317,7 @@ export default function InventarioPage() {
       precioVenta: '',
       stockInicial: 0,
       puntoReorden: 10,
+      porcentajeIva: 13,
       estado: true,
     });
     setModalProductoAbierto(true);
@@ -330,6 +333,7 @@ export default function InventarioPage() {
       precioVenta: prod.Precio_Venta,
       stockInicial: prod.Stock_Actual,
       puntoReorden: prod.Punto_Reorden,
+      porcentajeIva: prod.Porcentaje_IVA != null ? Number(prod.Porcentaje_IVA) : 13,
       estado: prod.Estado ?? true,
     });
     setModalProductoAbierto(true);
@@ -352,6 +356,7 @@ export default function InventarioPage() {
           descripcion: formDataProducto.descripcion.trim() || undefined,
           precioVenta: Number(formDataProducto.precioVenta),
           puntoReorden: Number(formDataProducto.puntoReorden),
+          porcentajeIva: Number(formDataProducto.porcentajeIva || 13),
           estado: Boolean(formDataProducto.estado),
         });
         showToast('Producto actualizado con éxito', 'success');
@@ -364,6 +369,7 @@ export default function InventarioPage() {
           precioVenta: Number(formDataProducto.precioVenta),
           stockInicial: Number(formDataProducto.stockInicial || 0),
           puntoReorden: Number(formDataProducto.puntoReorden || 10),
+          porcentajeIva: Number(formDataProducto.porcentajeIva || 13),
         });
         showToast('Producto registrado exitosamente', 'success');
       }
@@ -781,6 +787,11 @@ export default function InventarioPage() {
 
                           <td className="py-3 px-4">
                             <span className="font-bold text-[#132B20] block">{prod.Nombre}</span>
+                            {Number(prod.Porcentaje_IVA) === 2 && (
+                              <span className="inline-block mt-0.5 px-1.5 py-0.2 rounded text-[9.5px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
+                                IVA 2% Libros (Ley 9635)
+                              </span>
+                            )}
                           </td>
 
                           <td className="py-3 px-4">
@@ -1276,6 +1287,47 @@ export default function InventarioPage() {
                   </p>
                 </div>
               )}
+
+              {/* Régimen de IVA y Tarifa Reducida Ley 9635 */}
+              <div className="bg-[#FAF7F0] border border-[#DFD5C4] rounded-xl p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="font-bold text-[#132B20] text-xs flex items-center gap-1.5">
+                    <Percent className="w-4 h-4 text-emerald-700" />
+                    Régimen de IVA (Ley N.° 9635 Costa Rica)
+                  </label>
+                  <span className={`px-2 py-0.5 rounded text-[10px] font-black ${
+                    Number(formDataProducto.porcentajeIva) === 2 
+                      ? 'bg-amber-100 text-amber-800 border border-amber-300' 
+                      : 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                  }`}>
+                    {Number(formDataProducto.porcentajeIva)}% IVA
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2 pt-1">
+                  <input
+                    type="checkbox"
+                    id="chkTasaReducidaLibros"
+                    checked={Number(formDataProducto.porcentajeIva) === 2}
+                    onChange={(e) =>
+                      setFormDataProducto({
+                        ...formDataProducto,
+                        porcentajeIva: e.target.checked ? 2 : 13,
+                      })
+                    }
+                    className="w-4 h-4 rounded text-amber-600 focus:ring-amber-500 cursor-pointer"
+                  />
+                  <label
+                    htmlFor="chkTasaReducidaLibros"
+                    className="text-[11px] font-bold text-[#132B20] cursor-pointer"
+                  >
+                    Tarifa Reducida 2% IVA (Libros y Textos Escolares - Ley 9635)
+                  </label>
+                </div>
+                <p className="text-[10px] text-slate-500 leading-tight">
+                  Aplica tarifa reducida del 2% para libros de texto escolar y literatura didáctica (-11% sobre la tarifa general del 13%).
+                </p>
+              </div>
 
               <div className="pt-2 flex items-center justify-end gap-2 border-t border-slate-100">
                 <button

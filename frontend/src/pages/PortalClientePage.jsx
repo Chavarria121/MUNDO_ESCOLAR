@@ -194,7 +194,7 @@ export default function PortalClientePage() {
             </div>
 
             <h1 className="text-2xl sm:text-3xl font-black text-[#FAF7F0] tracking-tight">
-              ¡Bienvenido(a), {perfil?.Nombre_O_RazonSocial}!
+              ¡Hola, {user?.primerNombre || perfil?.Nombre || (perfil?.Nombre_O_RazonSocial ? perfil.Nombre_O_RazonSocial.split(" ")[0] : "Cliente")}!
             </h1>
             <p className="text-xs sm:text-sm text-[#DFD5C4]/90 max-w-2xl leading-relaxed">
               Consulte su historial oficial de facturación, compras registradas y actualice sus datos de contacto en tiempo real según la documentación del sistema.

@@ -126,6 +126,9 @@ DENY EXECUTE ON dbo.SP_DBA_VerificarIntegridadBD TO rol_db_aplicacion;
 
 -- Rol Vendedor: Permisos sobre ventas, clientes, inventario y facturación
 GRANT EXECUTE ON dbo.SP_Cliente_Consultar TO rol_db_vendedor;
+GRANT EXECUTE ON dbo.SP_Cliente_ValidarCapacidadCredito TO rol_db_vendedor;
+GRANT EXECUTE ON dbo.SP_Cliente_ValidarCapacidadCredito TO rol_db_aplicacion;
+GRANT EXECUTE ON dbo.SP_Cliente_ConsultarEstadoCredito TO rol_db_aplicacion;
 GRANT EXECUTE ON dbo.SP_Cliente_CrearPerfil TO rol_db_vendedor;
 GRANT EXECUTE ON dbo.SP_Producto_Consultar TO rol_db_vendedor;
 GRANT EXECUTE ON dbo.SP_Servicio_Consultar TO rol_db_vendedor;

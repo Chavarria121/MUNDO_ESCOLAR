@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
+import ModalRecuperarContrasena from '../components/auth/ModalRecuperarContrasena';
 
 export default function LoginPage({ onGoToLanding }) {
   const { login, loading } = useAuth();
@@ -21,6 +22,7 @@ export default function LoginPage({ onGoToLanding }) {
   const [nombreUsuario, setNombreUsuario] = useState('');
   const [contrasena, setContrasena] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [modalRecuperarAbierto, setModalRecuperarAbierto] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -190,6 +192,15 @@ export default function LoginPage({ onGoToLanding }) {
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
+              <div className="flex justify-end pt-1">
+                <button
+                  type="button"
+                  onClick={() => setModalRecuperarAbierto(true)}
+                  className="text-xs font-semibold text-[#C05A3E] hover:text-[#5C3622] hover:underline transition"
+                >
+                  ¿Olvidó su contraseña?
+                </button>
+              </div>
             </div>
 
             {/* Submit Button */}
@@ -211,6 +222,10 @@ export default function LoginPage({ onGoToLanding }) {
             </p>
           </div>
         </div>
+        <ModalRecuperarContrasena
+          isOpen={modalRecuperarAbierto}
+          onClose={() => setModalRecuperarAbierto(false)}
+        />
       </div>
     </div>
   );

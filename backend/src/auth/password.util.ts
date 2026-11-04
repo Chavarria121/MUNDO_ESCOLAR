@@ -37,3 +37,21 @@ export function verificarContrasena(textoPlano: string, hashAlmacenado: string):
   }
   return timingSafeEqual(bufferCalculado, bufferAlmacenado);
 }
+
+/**
+ * Genera una contraseña temporal segura para el primer ingreso del cliente.
+ * Formato amigable pero robusto: Mundo#XXXX (cumple mayúsculas, minúsculas, número y símbolo).
+ */
+export function generarContrasenaTemporal(): string {
+  const digitos = Math.floor(1000 + Math.random() * 9000); // 4 dígitos
+  const simbolos = ['!', '#', '$', '%', '*'];
+  const sim = simbolos[Math.floor(Math.random() * simbolos.length)];
+  return `Mundo${sim}${digitos}`;
+}
+
+/**
+ * Genera un código de seguridad OTP numérico de 6 dígitos para recuperación de contraseña.
+ */
+export function generarCodigoOtp(): string {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+}

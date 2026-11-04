@@ -253,4 +253,25 @@ describe('Mundo Escolar API (e2e) - Suite Completa de Seguridad, Auditoría y DB
 
     expect(res.body.message).toContain('ya se encuentra registrado');
   });
+  // 8. Consulta de Capacidad Crediticia, Morosidad Endurecida y Umbrales Comerciales
+  it('/clientes/:id/estado-credito (GET) - Consulta de capacidad comercial y validación de morosidad', async () => {
+    const loginRes = await request(app.getHttpServer())
+      .post('/auth/login')
+      .send({ nombreUsuario: 'admin', contrasena: TEST_ADMIN_PASSWORD })
+      .expect(200);
+
+    const token = loginRes.body.accessToken;
+
+    const res = await request(app.getHttpServer())
+      .get('/clientes/1/estado-credito')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+
+    expect(res.body).toHaveProperty('idCliente', 1);
+    expect(res.body).toHaveProperty('esMoroso');
+    expect(res.body).toHaveProperty('limiteCreditoMonto');
+    expect(res.body).toHaveProperty('limiteFacturas');
+    expect(res.body).toHaveProperty('puedeComprarContado');
+    expect(res.body).toHaveProperty('puedeComprarCredito');
+  });
 });

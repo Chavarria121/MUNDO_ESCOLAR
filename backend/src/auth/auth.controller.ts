@@ -4,6 +4,7 @@ import { Request } from 'express';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { CambiarContrasenaDto } from './dto/cambiar-contrasena.dto';
+import { SolicitarRecuperacionDto, ConfirmarRecuperacionDto } from './dto/recuperar-contrasena.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { UsuarioActual } from './decorators/usuario-actual.decorator';
 import { type UsuarioSesion } from './interfaces/usuario-sesion.interface';
@@ -61,5 +62,19 @@ export class AuthController {
     const authHeader = (req.headers as any)['authorization'] || '';
     const token = authHeader.replace(/^Bearer\s+/i, '').trim();
     return this.authService.logout(token);
+  }
+
+  @Post('solicitar-recuperacion')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Solicita el envío de un código OTP por correo para recuperar contraseña' })
+  solicitarRecuperacion(@Body() dto: SolicitarRecuperacionDto) {
+    return this.authService.solicitarRecuperacion(dto);
+  }
+
+  @Post('confirmar-recuperacion')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Valida el código OTP y actualiza la contraseña del usuario' })
+  confirmarRecuperacion(@Body() dto: ConfirmarRecuperacionDto) {
+    return this.authService.confirmarRecuperacion(dto);
   }
 }

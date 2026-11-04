@@ -32,6 +32,7 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
         '/auth/logout',
         '/auth/me',
         '/auth/perfil',
+        '/clientes/portal/mi-perfil',
       ];
 
       const esPermitida = rutasPermitidas.some((r) => ruta.includes(r));

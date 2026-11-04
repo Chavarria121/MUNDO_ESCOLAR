@@ -15,7 +15,20 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
   app.enableCors({
-    origin: ['http://localhost:5173', 'http://127.0.0.1:5173', 'http://localhost:5174', 'http://127.0.0.1:5174'],
+    origin: (origin, callback) => {
+      if (
+        !origin ||
+        origin.includes('localhost') ||
+        origin.includes('127.0.0.1') ||
+        origin.includes('100.122.128.35') ||
+        origin.startsWith('http://100.') ||
+        origin.startsWith('https://100.')
+      ) {
+        callback(null, true);
+      } else {
+        callback(null, true);
+      }
+    },
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
     credentials: true,
   });
@@ -38,7 +51,7 @@ async function bootstrap() {
   });
 
   const port = process.env.PORT || 3000;
-  await app.listen(port);
+  await app.listen(port, '0.0.0.0');
   logger.log(`Servidor listo en http://localhost:${port}/api`);
   logger.log(`Swagger en http://localhost:${port}/api/docs`);
 }

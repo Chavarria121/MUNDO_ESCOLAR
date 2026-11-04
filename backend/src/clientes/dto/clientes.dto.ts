@@ -26,11 +26,11 @@ export class CrearClienteParticularDto {
   @MaxLength(50)
   apellido2?: string;
 
-  @ApiPropertyOptional({ example: 'cliente@ejemplo.com', maxLength: 100 })
+  @ApiProperty({ example: 'cliente@ejemplo.com', maxLength: 100 })
   @IsString()
-  @IsOptional()
+  @IsNotEmpty({ message: 'El correo electrónico es obligatorio para registrar el cliente.' })
   @MaxLength(100)
-  correo?: string;
+  correo: string;
 
   @ApiPropertyOptional({ example: '8877-6655', maxLength: 30 })
   @IsString()
@@ -50,12 +50,11 @@ export class CrearClienteParticularDto {
   @MaxLength(50)
   nombreUsuario?: string;
 
-  @ApiProperty({ example: 'MiClaveSegura2026!', minLength: 8, maxLength: 50, description: 'Contraseña requerida del cliente' })
+  @ApiPropertyOptional({ example: 'MiClaveSegura2026!', minLength: 8, maxLength: 50, description: 'Contraseña opcional (si no se envía se autogenera una temporal)' })
   @IsString()
-  @IsNotEmpty({ message: 'La contraseña es obligatoria.' })
-  @MinLength(8, { message: 'La contraseña debe tener al menos 8 caracteres.' })
+  @IsOptional()
   @MaxLength(50)
-  contrasena: string;
+  contrasena?: string;
 }
 
 export class CrearClienteInstitucionalDto {
@@ -71,23 +70,23 @@ export class CrearClienteInstitucionalDto {
   @MaxLength(50)
   razonSocial: string;
 
-  @ApiPropertyOptional({ example: 'Prof. Mario Chaves (Director)', maxLength: 50 })
+  @ApiPropertyOptional({ example: 'Lic. Marvin Campos', maxLength: 50 })
   @IsString()
   @IsOptional()
   @MaxLength(50)
   nombreContacto?: string;
 
-  @ApiPropertyOptional({ example: '2260-1122', maxLength: 50 })
+  @ApiPropertyOptional({ example: '2260-1100', maxLength: 50 })
   @IsString()
   @IsOptional()
   @MaxLength(50)
   telefonoContacto?: string;
 
-  @ApiPropertyOptional({ example: 'direccion@liceodeheredia.ed.cr', maxLength: 50 })
+  @ApiProperty({ example: 'administracion@liceodeheredia.ed.cr', maxLength: 50 })
   @IsString()
-  @IsOptional()
+  @IsNotEmpty({ message: 'El correo de contacto es obligatorio para registrar la institución.' })
   @MaxLength(50)
-  correoContacto?: string;
+  correoContacto: string;
 
   @ApiPropertyOptional({ example: '2260-1100', maxLength: 30 })
   @IsString()
@@ -107,12 +106,11 @@ export class CrearClienteInstitucionalDto {
   @MaxLength(50)
   nombreUsuario?: string;
 
-  @ApiProperty({ example: 'MiClaveSegura2026!', minLength: 8, maxLength: 50, description: 'Contraseña requerida del cliente institucional' })
+  @ApiPropertyOptional({ example: 'MiClaveSegura2026!', minLength: 8, maxLength: 50, description: 'Contraseña opcional (si no se envía se autogenera una temporal)' })
   @IsString()
-  @IsNotEmpty({ message: 'La contraseña es obligatoria.' })
-  @MinLength(8, { message: 'La contraseña debe tener al menos 8 caracteres.' })
+  @IsOptional()
   @MaxLength(50)
-  contrasena: string;
+  contrasena?: string;
 }
 
 export class ActualizarClienteDto {
@@ -127,13 +125,13 @@ export class ActualizarClienteDto {
   @MaxLength(100)
   correo?: string;
 
-  @ApiPropertyOptional({ example: '8877-9900', maxLength: 30 })
+  @ApiPropertyOptional({ example: '8877-6655', maxLength: 30 })
   @IsString()
   @IsOptional()
   @MaxLength(30)
   telefono?: string;
 
-  @ApiPropertyOptional({ example: 'Nueva dirección actualizada', maxLength: 200 })
+  @ApiPropertyOptional({ example: 'Heredia, San Rafael, 100m este del parque', maxLength: 200 })
   @IsString()
   @IsOptional()
   @MaxLength(200)
@@ -144,7 +142,6 @@ export class ActualizarClienteDto {
   @IsOptional()
   estado?: boolean;
 
-  // Campos para particular
   @ApiPropertyOptional({ example: 'Alejandro', maxLength: 50 })
   @IsString()
   @IsOptional()
@@ -163,47 +160,62 @@ export class ActualizarClienteDto {
   @MaxLength(50)
   apellido2?: string;
 
-  // Campos para institucional
-  @ApiPropertyOptional({ example: 'Liceo de Heredia Renovado', maxLength: 50 })
+  @ApiPropertyOptional({ example: 'Liceo de Heredia', maxLength: 50 })
   @IsString()
   @IsOptional()
   @MaxLength(50)
   razonSocial?: string;
 
-  @ApiPropertyOptional({ example: 'Contacto Nuevo', maxLength: 50 })
+  @ApiPropertyOptional({ example: 'Lic. Marvin Campos', maxLength: 50 })
   @IsString()
   @IsOptional()
   @MaxLength(50)
   nombreContacto?: string;
 
-  @ApiPropertyOptional({ example: '2260-9999', maxLength: 50 })
+  @ApiPropertyOptional({ example: '2260-1100', maxLength: 50 })
   @IsString()
   @IsOptional()
   @MaxLength(50)
   telefonoContacto?: string;
 
-  @ApiPropertyOptional({ example: 'contacto@liceoheredia.ed.cr', maxLength: 50 })
+  @ApiPropertyOptional({ example: 'administracion@liceodeheredia.ed.cr', maxLength: 50 })
   @IsString()
   @IsOptional()
   @MaxLength(50)
   correoContacto?: string;
 }
 
+export class AutorizarCondicionPagoDto {
+  @ApiProperty({ example: 2, description: 'ID de la condición de pago a autorizar (ej. 2 = Crédito 30 Días)' })
+  @IsInt()
+  @IsNotEmpty()
+  idCondicionPago: number;
+}
+
 export class ConsultarHistorialDto {
-  @ApiPropertyOptional({ example: '2026-01-01' })
+  @ApiPropertyOptional({ example: '2026-01-01', description: 'Fecha de inicio del rango' })
   @IsDateString()
   @IsOptional()
   fechaInicio?: string;
 
-  @ApiPropertyOptional({ example: '2026-12-31' })
+  @ApiPropertyOptional({ example: '2026-12-31', description: 'Fecha fin del rango' })
   @IsDateString()
   @IsOptional()
   fechaFin?: string;
 }
 
-export class AutorizarCondicionPagoDto {
-  @ApiProperty({ example: 2, description: 'ID de la condición de pago (ej. 2 = Crédito 15 días)' })
-  @IsInt()
-  @Min(1)
-  idCondicionPago: number;
+export class ActualizarLimitesCreditoDto {
+  @ApiProperty({ example: 350000.00, description: 'Nuevo límite de crédito en colones' })
+  @Min(0, { message: 'El límite de crédito no puede ser negativo.' })
+  limiteCreditoMonto: number;
+
+  @ApiProperty({ example: 3, description: 'Cantidad máxima de facturas a crédito activas simultáneamente' })
+  @IsInt({ message: 'El límite de facturas debe ser un número entero.' })
+  @Min(1, { message: 'Debe permitir al menos 1 factura a crédito.' })
+  limiteCreditoFacturas: number;
+
+  @ApiPropertyOptional({ example: true, description: 'Autoriza o bloquea la opción de comprar a crédito' })
+  @IsBoolean()
+  @IsOptional()
+  permiteCredito?: boolean;
 }
