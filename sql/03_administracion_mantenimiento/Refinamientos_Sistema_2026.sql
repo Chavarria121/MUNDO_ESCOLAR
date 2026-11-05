@@ -13,6 +13,7 @@ GO
 -- 4. SP_Inventario_ConsultarMovimientos (con Id_Usuario y validación fechas)
 -- 5. SP_Producto_CambiarEstado
 -- 6. SP_Cliente_Actualizar (RF1.5 con retorno de antes/después)
+-- 7. SP_Rol_ConsultarMatriz (Consulta integral de matriz de roles)
 -- =========================================================================
 
 -- 1. SP_Usuario_Consultar
@@ -327,5 +328,22 @@ BEGIN
         IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
         THROW;
     END CATCH
+END;
+GO
+
+
+-- 7. SP_Rol_ConsultarMatriz
+CREATE OR ALTER PROCEDURE dbo.SP_Rol_ConsultarMatriz
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT 
+        rp.Id_Rol,
+        r.Nombre AS Nombre_Rol,
+        rp.Id_Permiso,
+        p.Nombre AS Nombre_Permiso
+    FROM dbo.Rol_Permiso rp
+    INNER JOIN dbo.Rol r ON rp.Id_Rol = r.Id_Rol
+    INNER JOIN dbo.Permiso p ON rp.Id_Permiso = p.Id_Permiso;
 END;
 GO
