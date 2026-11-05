@@ -11,6 +11,7 @@ import {
   Layers,
   Clock,
   Activity,
+  X,
 } from 'lucide-react';
 import api from '../api/client';
 import { useAuth } from '../context/AuthContext';
@@ -29,6 +30,18 @@ export default function DbaPage() {
 
   // Pestaña activa: 'BACKUPS' | 'INDICES'
   const [tabActiva, setTabActiva] = useState('BACKUPS');
+
+  // Modal de Confirmación Elegante
+  const [modalConfirmacion, setModalConfirmacion] = useState({
+    abierto: false,
+    titulo: '',
+    subtitulo: '',
+    mensaje: '',
+    accionTipo: null, // 'BACKUP' | 'INDICES'
+    payload: null,
+    botonTexto: 'Confirmar',
+    tipoColor: 'terracota',
+  });
 
   useEffect(() => {
     cargarDatos();
@@ -52,12 +65,48 @@ export default function DbaPage() {
     }
   };
 
+  // Abrir Modal de Confirmación para Backups
+  const abrirConfirmacionBackup = (tipo) => {
+    setModalConfirmacion({
+      abierto: true,
+      titulo: `Generar Copia de Seguridad ${tipo}`,
+      subtitulo: 'Procedimiento DBA • Mundo Escolar',
+      mensaje: `¿Desea generar una copia de seguridad ${tipo.toLowerCase()} del sistema Mundo Escolar? Se comprimirá con algoritmo nativo en C:\\SQLBackup y se comprobará su integridad física de inmediato.`,
+      accionTipo: 'BACKUP',
+      payload: tipo,
+      botonTexto: `Generar Copia ${tipo}`,
+      tipoColor: tipo === 'Completo' ? 'terracota' : 'verde',
+    });
+  };
+
+  // Abrir Modal de Confirmación para Optimización de Índices
+  const abrirConfirmacionIndices = () => {
+    setModalConfirmacion({
+      abierto: true,
+      titulo: 'Optimización de Búsquedas y Catálogos',
+      subtitulo: 'Procedimiento DBA • Mantenimiento de Índices',
+      mensaje: '¿Desea optimizar el sistema para agilizar las búsquedas y consultas del catálogo? Se reorganizarán y desfragmentarán los índices en segundo plano.',
+      accionTipo: 'INDICES',
+      payload: null,
+      botonTexto: 'Iniciar Optimización',
+      tipoColor: 'terracota',
+    });
+  };
+
+  // Confirmar acción desde el modal
+  const confirmarAccionModal = () => {
+    const { accionTipo, payload } = modalConfirmacion;
+    setModalConfirmacion((prev) => ({ ...prev, abierto: false }));
+
+    if (accionTipo === 'BACKUP') {
+      ejecutarBackup(payload);
+    } else if (accionTipo === 'INDICES') {
+      ejecutarMantenimientoIndices();
+    }
+  };
+
   // Ejecutar Backup
   const ejecutarBackup = async (tipo) => {
-    if (!window.confirm(`¿Desea generar una copia de seguridad ${tipo.toLowerCase()} del sistema Mundo Escolar?`)) {
-      return;
-    }
-
     setEjecutandoAccion(true);
     setAccionEnCurso(`Generando copia de seguridad ${tipo}...`);
     try {
@@ -102,10 +151,6 @@ export default function DbaPage() {
 
   // Ejecutar Mantenimiento de Índices
   const ejecutarMantenimientoIndices = async () => {
-    if (!window.confirm('¿Desea optimizar el sistema para agilizar las búsquedas y consultas del catálogo?')) {
-      return;
-    }
-
     setEjecutandoAccion(true);
     setAccionEnCurso('Optimizando búsquedas y rendimiento...');
     try {
@@ -166,7 +211,7 @@ export default function DbaPage() {
           </button>
 
           <button
-            onClick={() => ejecutarBackup('Completo')}
+            onClick={() => abrirConfirmacionBackup('Completo')}
             disabled={ejecutandoAccion}
             className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-[#C05A3E] to-[#D97448] hover:from-[#AA4C33] hover:to-[#C05A3E] text-[#FAF7F0] text-xs font-black rounded-xl shadow-terracotta transition disabled:opacity-50 active:scale-95 border border-[#FAF7F0]/20"
           >
@@ -175,7 +220,7 @@ export default function DbaPage() {
           </button>
 
           <button
-            onClick={() => ejecutarBackup('Diferencial')}
+            onClick={() => abrirConfirmacionBackup('Diferencial')}
             disabled={ejecutandoAccion}
             className="flex items-center gap-2 px-4 py-2.5 bg-[#132B20] hover:bg-[#1A3D2F] text-[#FAF7F0] text-xs font-bold rounded-xl shadow-xs transition disabled:opacity-50 border border-[#2D5E46]/40"
           >
@@ -402,7 +447,7 @@ export default function DbaPage() {
             </div>
 
             <button
-              onClick={ejecutarMantenimientoIndices}
+              onClick={abrirConfirmacionIndices}
               disabled={ejecutandoAccion}
               className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-[#C05A3E] to-[#D97448] hover:from-[#AA4C33] hover:to-[#C05A3E] text-[#FAF7F0] font-black rounded-xl shadow-terracotta transition disabled:opacity-50 active:scale-95 border border-[#FAF7F0]/20"
             >
@@ -459,6 +504,92 @@ export default function DbaPage() {
                   })}
                 </tbody>
               </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ================= MODAL DE CONFIRMACIÓN PERSONALIZADO ================= */}
+      {modalConfirmacion.abierto && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#132B20]/60 backdrop-blur-sm p-4 animate-in fade-in duration-150">
+          <div className="bg-white rounded-3xl max-w-md w-full shadow-2xl border border-[#DFD5C4] overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            {/* Header del modal */}
+            <div
+              className={`p-5 flex items-center justify-between text-[#FAF7F0] ${
+                modalConfirmacion.tipoColor === 'terracota'
+                  ? 'bg-gradient-to-r from-[#C05A3E] to-[#D97448]'
+                  : 'bg-[#132B20]'
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-white/10 border border-white/20 flex items-center justify-center shadow-xs">
+                  {modalConfirmacion.accionTipo === 'BACKUP' ? (
+                    <Database className="w-5 h-5 text-[#FAF7F0]" />
+                  ) : (
+                    <SlidersHorizontal className="w-5 h-5 text-[#FAF7F0]" />
+                  )}
+                </div>
+                <div>
+                  <h3 className="font-black text-sm tracking-wide text-[#FAF7F0]">
+                    {modalConfirmacion.titulo}
+                  </h3>
+                  <p className="text-[11px] text-[#FAF7F0]/80">
+                    {modalConfirmacion.subtitulo}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setModalConfirmacion((prev) => ({ ...prev, abierto: false }))}
+                className="p-1.5 text-[#FAF7F0]/70 hover:text-white hover:bg-white/10 rounded-xl transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Cuerpo del modal */}
+            <div className="p-6 space-y-4 text-xs text-[#132B20]">
+              <div className="p-3.5 rounded-2xl bg-[#FAF7F0] border border-[#DFD5C4] flex items-start gap-3">
+                <AlertTriangle className="w-5 h-5 text-[#C05A3E] shrink-0 mt-0.5" />
+                <p className="leading-relaxed font-medium text-[#5C3622]">
+                  {modalConfirmacion.mensaje}
+                </p>
+              </div>
+
+              {modalConfirmacion.accionTipo === 'BACKUP' && (
+                <div className="bg-[#1A3D2F]/5 border border-[#2D5E46]/20 rounded-2xl p-3 text-[11px] text-[#2D5E46] space-y-1">
+                  <div className="font-bold flex items-center gap-1.5">
+                    <ShieldCheck className="w-4 h-4 text-[#2D5E46]" />
+                    <span>Integridad de Seguridad Integrada:</span>
+                  </div>
+                  <p className="text-[#5C3622]/80">
+                    El archivo .BAK se generará con compresión de hardware y comprobación física de integridad inmediata.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Acciones */}
+            <div className="p-4 bg-[#FAF7F0] border-t border-[#DFD5C4] flex items-center justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={() => setModalConfirmacion((prev) => ({ ...prev, abierto: false }))}
+                disabled={ejecutandoAccion}
+                className="px-4 py-2.5 text-xs font-bold text-[#5C3622] hover:bg-[#DFD5C4]/40 rounded-xl transition"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={confirmarAccionModal}
+                disabled={ejecutandoAccion}
+                className={`px-5 py-2.5 text-xs font-black text-[#FAF7F0] rounded-xl shadow-md transition active:scale-95 border border-white/20 flex items-center gap-2 ${
+                  modalConfirmacion.tipoColor === 'terracota'
+                    ? 'bg-gradient-to-r from-[#C05A3E] to-[#D97448] hover:from-[#AA4C33] hover:to-[#C05A3E] shadow-terracotta'
+                    : 'bg-[#132B20] hover:bg-[#1A3D2F]'
+                }`}
+              >
+                {modalConfirmacion.botonTexto}
+              </button>
             </div>
           </div>
         </div>

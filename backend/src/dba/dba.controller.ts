@@ -3,6 +3,8 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { PermisosGuard } from '../auth/guards/permisos.guard';
 import { RequierePermisos } from '../auth/decorators/requiere-permisos.decorator';
+import { UsuarioActual } from '../auth/decorators/usuario-actual.decorator';
+import { type UsuarioSesion } from '../auth/interfaces/usuario-sesion.interface';
 import { PERMISOS } from '../auth/permisos.constants';
 import { DbaService } from './dba.service';
 import {
@@ -29,29 +31,29 @@ export class DbaController {
   @Post('backups/completo')
   @RequierePermisos(PERMISOS.DBA_MANTENIMIENTO)
   @ApiOperation({ summary: 'Ejecutar respaldo completo (.bak) de MUNDO_ESCOLAR con compresión (SP_DBA_EjecutarBackupCompleto)' })
-  backupCompleto(@Body() dto: EjecutarBackupDto) {
-    return this.dba.ejecutarBackupCompleto(dto);
+  backupCompleto(@UsuarioActual() usuario: UsuarioSesion, @Body() _dto?: EjecutarBackupDto) {
+    return this.dba.ejecutarBackupCompleto(usuario.idUsuario);
   }
 
   @Post('backups/diferencial')
   @RequierePermisos(PERMISOS.DBA_MANTENIMIENTO)
   @ApiOperation({ summary: 'Ejecutar respaldo diferencial de MUNDO_ESCOLAR (SP_DBA_EjecutarBackupDiferencial)' })
-  backupDiferencial(@Body() dto: EjecutarBackupDto) {
-    return this.dba.ejecutarBackupDiferencial(dto);
+  backupDiferencial(@UsuarioActual() usuario: UsuarioSesion, @Body() _dto?: EjecutarBackupDto) {
+    return this.dba.ejecutarBackupDiferencial(usuario.idUsuario);
   }
 
   @Post('backups/log')
   @RequierePermisos(PERMISOS.DBA_MANTENIMIENTO)
   @ApiOperation({ summary: 'Ejecutar respaldo de log de transacciones (SP_DBA_EjecutarBackupLog)' })
-  backupLog(@Body() dto: EjecutarBackupDto) {
-    return this.dba.ejecutarBackupLog(dto);
+  backupLog(@UsuarioActual() usuario: UsuarioSesion, @Body() _dto?: EjecutarBackupDto) {
+    return this.dba.ejecutarBackupLog(usuario.idUsuario);
   }
 
   @Post('backups/verificar')
   @RequierePermisos(PERMISOS.DBA_MANTENIMIENTO)
   @ApiOperation({ summary: 'Verificar integridad física de un archivo .bak mediante RESTORE VERIFYONLY (SP_DBA_VerificarIntegridadBackup)' })
-  verificar(@Body() dto: VerificarIntegridadBackupDto) {
-    return this.dba.verificarIntegridad(dto);
+  verificar(@UsuarioActual() usuario: UsuarioSesion, @Body() dto: VerificarIntegridadBackupDto) {
+    return this.dba.verificarIntegridad(dto, usuario.idUsuario);
   }
 
   @Post('indices/mantenimiento')

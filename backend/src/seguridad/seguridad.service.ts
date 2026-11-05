@@ -14,6 +14,10 @@ export class SeguridadService {
   constructor(private readonly sql: SqlService) {}
 
   // ---------- Usuarios ----------
+  consultarUsuarios(idUsuario: number | null, idEjecutor: number) {
+    return this.sql.consultarSP('SP_Usuario_Consultar', { Id_Usuario: idUsuario }, { idUsuario: idEjecutor });
+  }
+
   async crearUsuario(dto: CrearUsuarioDto, idEjecutor: number) {
     const r = await this.sql.ejecutarSP(
       'SP_Usuario_Crear',
@@ -60,6 +64,15 @@ export class SeguridadService {
 
   removerPermisoDeRol(idRol: number, idPermiso: number, idEjecutor: number) {
     return this.sql.consultarSPUno('SP_Rol_RemoverPermiso', { Id_Rol: idRol, Id_Permiso: idPermiso }, { idUsuario: idEjecutor });
+  }
+
+  async consultarMatriz(idEjecutor: number) {
+    const [roles, permisos, asignaciones] = await Promise.all([
+      this.consultarRoles(null, idEjecutor),
+      this.consultarPermisos(null, idEjecutor),
+      this.sql.consultarSP<any>('SP_Rol_ConsultarMatriz', {}, { idUsuario: idEjecutor }),
+    ]);
+    return { roles, permisos, asignaciones };
   }
 
   // ---------- Permisos ----------

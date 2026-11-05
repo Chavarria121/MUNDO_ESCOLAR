@@ -82,7 +82,7 @@ export default function DashboardOverview({ onNavigate }) {
           </div>
 
           <h1 className="text-2xl lg:text-3xl font-extrabold tracking-tight mb-2.5 text-[#FAF7F0]">
-            ¡Hola, {user?.nombreUsuario}!
+            ¡Hola, {user?.primerNombre || user?.nombreUsuario}!
           </h1>
 
           <p className="text-sm text-[#F3ECE0]/90 leading-relaxed font-normal">

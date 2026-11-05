@@ -1,19 +1,57 @@
+import * as bcrypt from 'bcryptjs';
 import { createHash, timingSafeEqual } from 'crypto';
 
+const SALT_ROUNDS = 12;
+
 /**
- * Reproduce exactamente CONVERT(VARCHAR(255), HASHBYTES('SHA2_256', @texto), 2) de SQL Server:
- * SHA-256 en hexadecimal MAYÚSCULA y sin prefijo 0x.
- * El contrato de SP_Usuario_Crear (@ContrasenaHash) y SP_Usuario_ObtenerParaAutenticacion
- * (devuelve HashContrasena) establece que la contraseña en texto plano nunca llega a la BD.
- * Se usa 'latin1' porque HASHBYTES sobre VARCHAR opera con la página de códigos Latin1.
+ * Genera un hash criptográfico seguro con sal usando bcrypt (12 rondas de costo).
+ * Elimina completamente el uso de hashes SHA-256 sin sal para nuevas credenciales (Remediación S02).
  */
 export function hashContrasena(textoPlano: string): string {
-  return createHash('sha256').update(textoPlano, 'latin1').digest('hex').toUpperCase();
+  return bcrypt.hashSync(textoPlano, SALT_ROUNDS);
 }
 
-/** Comparación en tiempo constante para no filtrar información por temporización. */
+/**
+ * Verifica una contraseña en texto plano contra el hash almacenado.
+ * 1. Soporta hashes modernos bcrypt ($2a$, $2b$, $2y$).
+ * 2. Mantiene compatibilidad con hashes legados SHA-256 (64 hex mayúsculas)
+ *    utilizando comparación en tiempo constante (timingSafeEqual) para evitar fugas de canal lateral.
+ */
 export function verificarContrasena(textoPlano: string, hashAlmacenado: string): boolean {
-  const calculado = Buffer.from(hashContrasena(textoPlano), 'utf8');
-  const almacenado = Buffer.from(String(hashAlmacenado ?? '').toUpperCase(), 'utf8');
-  return calculado.length === almacenado.length && timingSafeEqual(calculado, almacenado);
+  if (!textoPlano || !hashAlmacenado) return false;
+
+  const hash = String(hashAlmacenado).trim();
+
+  // 1. Verificación segura con bcrypt
+  if (hash.startsWith('$2')) {
+    return bcrypt.compareSync(textoPlano, hash);
+  }
+
+  // 2. Verificación de compatibilidad con hash legado SHA-256
+  const legacyHash = createHash('sha256').update(textoPlano, 'latin1').digest('hex').toUpperCase();
+  const bufferCalculado = Buffer.from(legacyHash, 'utf8');
+  const bufferAlmacenado = Buffer.from(hash.toUpperCase(), 'utf8');
+
+  if (bufferCalculado.length !== bufferAlmacenado.length) {
+    return false;
+  }
+  return timingSafeEqual(bufferCalculado, bufferAlmacenado);
+}
+
+/**
+ * Genera una contraseña temporal segura para el primer ingreso del cliente.
+ * Formato amigable pero robusto: Mundo#XXXX (cumple mayúsculas, minúsculas, número y símbolo).
+ */
+export function generarContrasenaTemporal(): string {
+  const digitos = Math.floor(1000 + Math.random() * 9000); // 4 dígitos
+  const simbolos = ['!', '#', '$', '%', '*'];
+  const sim = simbolos[Math.floor(Math.random() * simbolos.length)];
+  return `Mundo${sim}${digitos}`;
+}
+
+/**
+ * Genera un código de seguridad OTP numérico de 6 dígitos para recuperación de contraseña.
+ */
+export function generarCodigoOtp(): string {
+  return Math.floor(100000 + Math.random() * 900000).toString();
 }

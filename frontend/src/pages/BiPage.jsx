@@ -21,6 +21,10 @@ import {
   Sparkles,
   ExternalLink,
   DollarSign,
+  AlertTriangle,
+  Truck,
+  Package,
+  PieChart,
 } from 'lucide-react';
 import api from '../api/client';
 import { useAuth } from '../context/AuthContext';
@@ -126,6 +130,9 @@ export default function BiPage() {
 
   const metodos = dashboardData?.metodosPago || [];
   const vendedores = dashboardData?.ventasPorVendedor || [];
+  const rentabilidad = dashboardData?.rentabilidad || { totalVentas: 0, totalCosto: 0, utilidadBruta: 0, margenBrutoPct: 0 };
+  const proveedoresList = dashboardData?.proveedores || [];
+  const inventarioSnap = dashboardData?.inventario || { totalItems: 0, valorTotalInventario: 0, itemsEnRiesgoReorden: 0, rotacionPromedio: 0 };
 
   return (
     <div className="space-y-6 text-[#132B20]">
@@ -562,6 +569,114 @@ export default function BiPage() {
       {/* =========================================================================
           6. SECCIÓN DE AUDITORÍA: CUADRE Y CONCILIACIÓN MATEMÁTICA
          ========================================================================= */}
+      
+      {/* =========================================================================
+          5. FASE 5: EXPANSIÓN DATA WAREHOUSE - RENTABILIDAD, PROVEEDORES Y KARDEX
+         ========================================================================= */}
+      <div className="bg-gradient-to-br from-[#132B20] via-[#1a3a2b] to-[#2D5E46] rounded-3xl p-6 text-[#FAF7F0] shadow-xl border border-[#FAF7F0]/10">
+        <div className="flex flex-col md:flex-row md:items-center justify-between pb-5 border-b border-white/10 gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-[#C05A3E] text-white flex items-center justify-center font-bold shadow-md">
+              <PieChart className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="font-black text-lg text-white tracking-tight">
+                  Rentabilidad Neta Real & Cadena de Suministro (DW Fase 2)
+                </h3>
+                <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full bg-white/10 text-emerald-300 border border-emerald-400/30">
+                  dw.FactCompras &bull; dw.FactInventario
+                </span>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-200 border border-emerald-400/20">
+                  Filegroups: FG_DW
+                </span>
+              </div>
+              <p className="text-xs text-white/70 mt-0.5">
+                Cálculo de margen auténtico cruzando Kardex y contratos de compra con distribuidores autorizados
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 text-xs font-mono font-bold bg-black/20 px-4 py-2 rounded-xl border border-white/10">
+            <span className="text-white/60">Margen Global Ponderado:</span>
+            <span className="text-emerald-400 text-sm font-black">+{rentabilidad.margenBrutoPct}%</span>
+          </div>
+        </div>
+
+        {/* Tarjetas de Rentabilidad y Capital Inmovilizado */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-5">
+          <div className="bg-white/5 backdrop-blur-sm p-4 rounded-2xl border border-white/10">
+            <span className="text-[11px] font-bold text-white/60 uppercase tracking-wider block">Ingreso por Mercadería</span>
+            <span className="text-xl font-black text-white mt-1 block font-mono">{formatCRC(rentabilidad.totalVentas)}</span>
+            <span className="text-[10px] text-white/50 mt-1 block">Facturado en punto de venta</span>
+          </div>
+
+          <div className="bg-white/5 backdrop-blur-sm p-4 rounded-2xl border border-white/10">
+            <span className="text-[11px] font-bold text-white/60 uppercase tracking-wider block">Costo de Ventas (COGS)</span>
+            <span className="text-xl font-black text-rose-300 mt-1 block font-mono">{formatCRC(rentabilidad.totalCosto)}</span>
+            <span className="text-[10px] text-rose-200/60 mt-1 block">Costo mayorista de adquisición</span>
+          </div>
+
+          <div className="bg-emerald-500/10 backdrop-blur-sm p-4 rounded-2xl border border-emerald-400/30">
+            <span className="text-[11px] font-bold text-emerald-300 uppercase tracking-wider block">Ganancia Bruta Real</span>
+            <span className="text-xl font-black text-emerald-300 mt-1 block font-mono">+{formatCRC(rentabilidad.utilidadBruta)}</span>
+            <span className="text-[10px] text-emerald-200/70 mt-1 block">Margen limpio: {rentabilidad.margenBrutoPct}%</span>
+          </div>
+
+          <div className="bg-white/5 backdrop-blur-sm p-4 rounded-2xl border border-white/10">
+            <span className="text-[11px] font-bold text-white/60 uppercase tracking-wider block">Capital en Bodega (Snapshot)</span>
+            <span className="text-xl font-black text-amber-300 mt-1 block font-mono">{formatCRC(inventarioSnap.valorTotalInventario)}</span>
+            <span className="text-[10px] text-amber-200/60 mt-1 block">{inventarioSnap.totalItems} ítems &bull; {inventarioSnap.itemsEnRiesgoReorden} en alerta reorden</span>
+          </div>
+        </div>
+
+        {/* Scorecard de Proveedores */}
+        <div className="mt-6 pt-5 border-t border-white/10">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <Truck className="w-4 h-4 text-[#C05A3E]" />
+              <h4 className="text-xs font-bold uppercase tracking-wider text-white">
+                Scorecard de Proveedores & Lead Time de Entrega (dw.FactCompras)
+              </h4>
+            </div>
+            <span className="text-[10px] text-white/60">Trazabilidad de órdenes OC-001 a OC-004</span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {proveedoresList.map((prov, idx) => (
+              <div key={idx} className="bg-white/5 p-4 rounded-2xl border border-white/10 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-xs text-white truncate max-w-[180px]">{prov.proveedor}</span>
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                    prov.cumplimientoPct >= 95 
+                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400/30' 
+                      : 'bg-rose-500/20 text-rose-300 border-rose-400/30'
+                  }`}>
+                    {prov.cumplimientoPct}% Cumplimiento
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-[11px] text-white/70 pt-1 border-t border-white/10">
+                  <span>Inversión en Compras:</span>
+                  <span className="font-mono font-bold text-white">{formatCRC(prov.totalComprado)}</span>
+                </div>
+                <div className="flex items-center justify-between text-[11px] text-white/70">
+                  <span>Puntualidad en Entregas:</span>
+                  <span className={`font-bold ${prov.promedioDiasTardanza > 0 ? 'text-rose-300' : 'text-emerald-300'}`}>
+                    {prov.promedioDiasTardanza > 0 ? `+${prov.promedioDiasTardanza} días retraso` : 'Entregas a Tiempo'}
+                  </span>
+                </div>
+                {prov.cumplimientoPct < 95 && (
+                  <div className="text-[10px] bg-rose-500/20 text-rose-200 border border-rose-400/30 rounded-lg p-1.5 flex items-center gap-1.5 mt-1">
+                    <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-rose-300" />
+                    <span>Alerta: Caso Mochilas (+9 días retraso registrado en BI)</span>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+
       <div className="bg-white rounded-3xl border border-[#DFD5C4] overflow-hidden shadow-subtle">
         <div className="p-5 border-b border-[#DFD5C4] bg-[#F3ECE0]/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-3">

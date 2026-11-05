@@ -106,8 +106,12 @@ export class ComprasController {
   @Post(':id/confirmar')
   @RequierePermisos(PERMISOS.COMPRAS_RECEPCIONAR)
   @ApiOperation({ summary: 'Confirmar y recepcionar compra: ingresa existencias al stock (SP_Compra_Confirmar)' })
-  confirmar(@Param('id', ParseIntPipe) id: number, @UsuarioActual() u: UsuarioSesion) {
-    return this.compras.confirmarCompra(id, u.idUsuario);
+  confirmar(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: { fechaRecepcion?: string },
+    @UsuarioActual() u: UsuarioSesion,
+  ) {
+    return this.compras.confirmarCompra(id, u.idUsuario, body?.fechaRecepcion);
   }
 
   @Post(':id/anular')
@@ -119,5 +123,19 @@ export class ComprasController {
     @UsuarioActual() u: UsuarioSesion,
   ) {
     return this.compras.anularCompra(id, dto, u.idUsuario);
+  }
+
+  @Get('reabastecimiento/sugerencias')
+  @RequierePermisos(PERMISOS.COMPRAS_REGISTRAR)
+  @ApiOperation({ summary: 'Obtener sugerencias inteligentes de reabastecimiento por stock crítico (Smart Procurement)' })
+  obtenerSugerencias() {
+    return this.compras.obtenerSugerenciasReabastecimiento();
+  }
+
+  @Post('reabastecimiento/generar-ordenes')
+  @RequierePermisos(PERMISOS.COMPRAS_REGISTRAR)
+  @ApiOperation({ summary: 'Generar órdenes de compra sugeridas en estado Pendiente en 1 solo clic' })
+  generarOrdenesSugeridas(@Body() dto: any, @UsuarioActual() u: UsuarioSesion) {
+    return this.compras.generarOrdenesSugeridas(dto, u.idUsuario);
   }
 }

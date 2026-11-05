@@ -22,6 +22,7 @@ import {
   ActualizarClienteDto,
   AutorizarCondicionPagoDto,
   ConsultarHistorialDto,
+  ConsultarHistorialGeneralDto,
   CrearClienteInstitucionalDto,
   CrearClienteParticularDto,
 } from './dto/clientes.dto';
@@ -57,6 +58,15 @@ export class ClientesController {
     return this.clientes.listarClientesActivos();
   }
 
+  @Get('historial-general')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, PermisosGuard)
+  @RequierePermisos(PERMISOS.CLIENTES_CONSULTAR)
+  @ApiOperation({ summary: 'Historial general de compras y facturación de clientes (SP_Cliente_HistorialGeneral)' })
+  historialGeneral(@Query() dto: ConsultarHistorialGeneralDto) {
+    return this.clientes.consultarHistorialGeneral(dto);
+  }
+
   @Get(':id')
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, PermisosGuard)
@@ -79,14 +89,14 @@ export class ClientesController {
   @Post('particular')
   @ApiOperation({ summary: 'Registrar nuevo cliente particular (SP_Cliente_CrearPerfil)' })
   crearParticular(@Body() dto: CrearClienteParticularDto, @UsuarioActual() u?: UsuarioSesion) {
-    return this.clientes.crearParticular(dto, u?.idUsuario ?? 1);
+    return this.clientes.crearParticular(dto, u?.idUsuario ?? null);
   }
 
   // Registro de cliente institucional (Público desde Landing o colaboradores con sesión)
   @Post('institucional')
   @ApiOperation({ summary: 'Registrar nuevo cliente institucional (SP_Cliente_CrearPerfil)' })
   crearInstitucional(@Body() dto: CrearClienteInstitucionalDto, @UsuarioActual() u?: UsuarioSesion) {
-    return this.clientes.crearInstitucional(dto, u?.idUsuario ?? 1);
+    return this.clientes.crearInstitucional(dto, u?.idUsuario ?? null);
   }
 
   @Put(':id')
@@ -100,6 +110,15 @@ export class ClientesController {
     @UsuarioActual() u: UsuarioSesion,
   ) {
     return this.clientes.actualizar(id, dto, u.idUsuario);
+  }
+
+  @Get(':id/estado-credito')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, PermisosGuard)
+  @RequierePermisos(PERMISOS.CLIENTES_CONSULTAR)
+  @ApiOperation({ summary: 'Consultar estado de crédito y morosidad de un cliente' })
+  consultarEstadoCredito(@Param('id', ParseIntPipe) id: number) {
+    return this.clientes.consultarEstadoCredito(id);
   }
 
   @Get(':id/condiciones-pago')

@@ -6,6 +6,7 @@ import {
   NotFoundException,
   Param,
   ParseIntPipe,
+  Patch,
   Post,
   Put,
   Query,
@@ -84,6 +85,28 @@ export class ProductosController {
     @UsuarioActual() u: UsuarioSesion,
   ) {
     return this.productos.actualizarProducto(id, dto, u.idUsuario);
+  }
+
+  @Patch('productos/:id/estado')
+  @RequierePermisos(PERMISOS.INVENTARIO_GESTIONAR)
+  @ApiOperation({ summary: 'Activar o desactivar producto (SP_Producto_CambiarEstado)' })
+  cambiarEstadoProducto(
+    @Param('id', ParseIntPipe) id: number,
+    @Body('estado') estado: boolean,
+    @UsuarioActual() u: UsuarioSesion,
+  ) {
+    return this.productos.cambiarEstadoProducto(id, Boolean(estado), u.idUsuario);
+  }
+
+  @Patch('servicios/:id/estado')
+  @RequierePermisos(PERMISOS.INVENTARIO_GESTIONAR)
+  @ApiOperation({ summary: 'Activar o desactivar servicio escolar' })
+  cambiarEstadoServicio(
+    @Param('id', ParseIntPipe) id: number,
+    @Body('estado') estado: boolean,
+    @UsuarioActual() u: UsuarioSesion,
+  ) {
+    return this.productos.cambiarEstadoServicio(id, Boolean(estado), u.idUsuario);
   }
 
   // ================= SERVICIOS =================

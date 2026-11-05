@@ -1,17 +1,19 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
 import { SqlService } from '../database/sql.service';
-import { hashContrasena } from '../auth/password.util';
+import { hashContrasena, generarContrasenaTemporal } from '../auth/password.util';
+import { EmailService } from '../email/email.service';
 import {
   ActualizarClienteDto,
   AutorizarCondicionPagoDto,
   ConsultarHistorialDto,
+  ConsultarHistorialGeneralDto,
   CrearClienteInstitucionalDto,
   CrearClienteParticularDto,
 } from './dto/clientes.dto';
 
 @Injectable()
 export class ClientesService {
-  constructor(private readonly sql: SqlService) {}
+  constructor(private readonly sql: SqlService, private readonly emailService: EmailService) {}
 
   
   async consultarTse(identificacion: string) {
@@ -118,59 +120,55 @@ export class ClientesService {
     });
   }
 
-    async crearParticular(dto: CrearClienteParticularDto, idEjecutor: number) {
-    let idUsuarioCliente = dto.idUsuario;
-    if (!idUsuarioCliente) {
-      const num = dto.identificacion.replace(/[^0-9]/g, '');
-      const nomUser = (dto.nombreUsuario && dto.nombreUsuario.trim()) || ('cli.' + num);
-      const correoUser = (dto.correo && dto.correo.trim()) || (nomUser + '@mundoescolar.cr');
-      const passPlano = (dto.contrasena && dto.contrasena.trim()) || 'Cliente2026!';
+  consultarHistorialGeneral(dto: ConsultarHistorialGeneralDto) {
+    return this.sql.consultarSP('SP_Cliente_HistorialGeneral', {
+      Id_Cliente: dto.idCliente ?? null,
+      Tipo_Cliente: dto.tipoCliente ?? null,
+      FechaInicio: dto.fechaInicio ? new Date(dto.fechaInicio) : null,
+      FechaFin: dto.fechaFin ? new Date(dto.fechaFin) : null,
+      Estado_Venta: dto.estadoVenta ?? null,
+    });
+  }
 
-      // 1. Verificar si el usuario ya existe en Usuario
-      const existentes = await this.sql.consultarQuery<{ Id_Usuario: number; Vinculado: number }>(
-        `SELECT u.Id_Usuario, (SELECT COUNT(1) FROM Cliente c WHERE c.Id_Usuario = u.Id_Usuario) AS Vinculado
-         FROM Usuario u WHERE u.Nombre_Usuario = @nom OR u.Correo = @correo`,
-        { nom: nomUser, correo: correoUser },
+  async crearParticular(dto: CrearClienteParticularDto, idEjecutor: number | null = null) {
+    const num = dto.identificacion.replace(/[^0-9]/g, '');
+    const nomUser = (dto.nombreUsuario && dto.nombreUsuario.trim()) || ('cli.' + num);
+    const correoUser = dto.correo.trim();
+
+    let passPlano = dto.contrasena?.trim();
+    let esTemporal = false;
+    if (!passPlano) {
+      passPlano = generarContrasenaTemporal();
+      esTemporal = true;
+    }
+    const requiereCambio = esTemporal ? 1 : 0;
+
+    // 1. Verificar disponibilidad de usuario/correo via SP (PoLP estricto sin SELECT directo)
+    const disp = await this.sql.consultarSPUno<{ NombreUsuarioExiste: boolean; CorreoExiste: boolean }>(
+      'SP_Usuario_VerificarDisponibilidad',
+      { Nombre_Usuario: nomUser, Correo: correoUser },
+    );
+
+    if (disp?.NombreUsuarioExiste || disp?.CorreoExiste) {
+      throw new ConflictException(
+        'El nombre de usuario o correo electrónico ya se encuentra registrado. Inicie sesión para vincular su cuenta.',
       );
-
-      if (existentes && existentes.length > 0) {
-        if (existentes[0].Vinculado === 0) {
-          idUsuarioCliente = existentes[0].Id_Usuario;
-          if (dto.contrasena && dto.contrasena.trim()) {
-            await this.sql.consultarQuery(
-              `UPDATE Usuario SET Contrasena = @hash WHERE Id_Usuario = @id`,
-              { hash: hashContrasena(passPlano), id: idUsuarioCliente },
-            );
-          }
-        } else {
-          // Generar sufijo único para evitar colisión de UQ_Cliente_Usuario
-          const rnd = Math.floor(1000 + Math.random() * 9000);
-          const nomUserNuevo = `cli.${num}.${rnd}`;
-          const user = await this.sql.ejecutarSP(
-            'SP_Usuario_Crear',
-            {
-              Nombre_Usuario: nomUserNuevo,
-              Correo: `${nomUserNuevo}@mundoescolar.cr`,
-              ContrasenaHash: hashContrasena(passPlano),
-            },
-            { idUsuario: idEjecutor, salidas: { Id_Usuario_Nuevo: 'int' } },
-          );
-          idUsuarioCliente = user.filas[0]?.Id_Usuario ?? user.salida?.Id_Usuario_Nuevo;
-        }
-      } else {
-        const user = await this.sql.ejecutarSP(
-          'SP_Usuario_Crear',
-          {
-            Nombre_Usuario: nomUser,
-            Correo: correoUser,
-            ContrasenaHash: hashContrasena(passPlano),
-          },
-          { idUsuario: idEjecutor, salidas: { Id_Usuario_Nuevo: 'int' } },
-        );
-        idUsuarioCliente = user.filas[0]?.Id_Usuario ?? user.salida?.Id_Usuario_Nuevo;
-      }
     }
 
+    // 2. Crear usuario asociado de manera segura
+    const user = await this.sql.ejecutarSP(
+      'SP_Usuario_Crear',
+      {
+        Nombre_Usuario: nomUser,
+        Correo: correoUser,
+        ContrasenaHash: hashContrasena(passPlano),
+        Requiere_Cambio_Contrasena: requiereCambio,
+      },
+      { idUsuario: idEjecutor, salidas: { Id_Usuario_Nuevo: 'int' } },
+    );
+    const idUsuarioCliente = user.filas[0]?.Id_Usuario ?? user.salida?.Id_Usuario_Nuevo;
+
+    // 3. Crear perfil de cliente particular
     const r = await this.sql.ejecutarSP(
       'SP_Cliente_CrearPerfil',
       {
@@ -185,55 +183,60 @@ export class ClientesService {
       },
       { idUsuario: idEjecutor, salidas: { Id_Cliente_Nuevo: 'int' } },
     );
+
+    // 4. Despacho asíncrono no bloqueante del correo de bienvenida
+    this.emailService
+      .enviarCredencialesBienvenida({
+        destinatario: correoUser,
+        nombreCliente: dto.nombre + ' ' + dto.apellido1,
+        identificacion: dto.identificacion,
+        nombreUsuario: nomUser,
+        contrasenaTemporal: passPlano,
+      })
+      .catch((err) => console.error('Error enviando correo de bienvenida (Particular):', err));
+
     return r.filas[0] ?? { Id_Cliente: r.salida.Id_Cliente_Nuevo };
   }
 
-    async crearInstitucional(dto: CrearClienteInstitucionalDto, idEjecutor: number) {
-    const idAdmin = idEjecutor || 1;
-    let idUsuarioCliente = dto.idUsuario;
-    if (!idUsuarioCliente) {
-      const num = dto.cedulaJuridica.replace(/[^0-9]/g, '');
-      const nomUser = (dto.nombreUsuario && dto.nombreUsuario.trim()) || ('inst.' + num);
-      const correoUser = (dto.correoContacto && dto.correoContacto.trim()) || (nomUser + '@mundoescolar.cr');
-      const passPlano = (dto.contrasena && dto.contrasena.trim()) || 'Cliente2026!';
+  async crearInstitucional(dto: CrearClienteInstitucionalDto, idEjecutor: number | null = null) {
+    const num = dto.cedulaJuridica.replace(/[^0-9]/g, '');
+    const nomUser = (dto.nombreUsuario && dto.nombreUsuario.trim()) || ('inst.' + num);
+    const correoUser = dto.correoContacto.trim();
 
-      const existentes = await this.sql.consultarQuery<{ Id_Usuario: number; Vinculado: number }>(
-        `SELECT u.Id_Usuario, (SELECT COUNT(1) FROM Cliente c WHERE c.Id_Usuario = u.Id_Usuario) AS Vinculado
-         FROM Usuario u WHERE u.Nombre_Usuario = @nom OR u.Correo = @correo`,
-        { nom: nomUser, correo: correoUser },
+    let passPlano = dto.contrasena?.trim();
+    let esTemporal = false;
+    if (!passPlano) {
+      passPlano = generarContrasenaTemporal();
+      esTemporal = true;
+    }
+    const requiereCambio = esTemporal ? 1 : 0;
+
+    // 1. Verificar disponibilidad de usuario/correo via SP (PoLP estricto sin SELECT directo)
+    const disp = await this.sql.consultarSPUno<{ NombreUsuarioExiste: boolean; CorreoExiste: boolean }>(
+      'SP_Usuario_VerificarDisponibilidad',
+      { Nombre_Usuario: nomUser, Correo: correoUser },
+    );
+
+    if (disp?.NombreUsuarioExiste || disp?.CorreoExiste) {
+      throw new ConflictException(
+        'El nombre de usuario o correo electrónico ya se encuentra registrado. Inicie sesión para vincular su cuenta institucional.',
       );
-
-      if (existentes && existentes.length > 0) {
-        if (existentes[0].Vinculado === 0) {
-          idUsuarioCliente = existentes[0].Id_Usuario;
-        } else {
-          const rnd = Math.floor(1000 + Math.random() * 9000);
-          const nomUserNuevo = `inst.${num}.${rnd}`;
-          const user = await this.sql.ejecutarSP(
-            'SP_Usuario_Crear',
-            {
-              Nombre_Usuario: nomUserNuevo,
-              Correo: `${nomUserNuevo}@mundoescolar.cr`,
-              ContrasenaHash: hashContrasena(passPlano),
-            },
-            { idUsuario: idEjecutor, salidas: { Id_Usuario_Nuevo: 'int' } },
-          );
-          idUsuarioCliente = user.filas[0]?.Id_Usuario ?? user.salida?.Id_Usuario_Nuevo;
-        }
-      } else {
-        const user = await this.sql.ejecutarSP(
-          'SP_Usuario_Crear',
-          {
-            Nombre_Usuario: nomUser,
-            Correo: correoUser,
-            ContrasenaHash: hashContrasena(passPlano),
-          },
-          { idUsuario: idEjecutor, salidas: { Id_Usuario_Nuevo: 'int' } },
-        );
-        idUsuarioCliente = user.filas[0]?.Id_Usuario ?? user.salida?.Id_Usuario_Nuevo;
-      }
     }
 
+    // 2. Crear usuario asociado de manera segura
+    const user = await this.sql.ejecutarSP(
+      'SP_Usuario_Crear',
+      {
+        Nombre_Usuario: nomUser,
+        Correo: correoUser,
+        ContrasenaHash: hashContrasena(passPlano),
+        Requiere_Cambio_Contrasena: requiereCambio,
+      },
+      { idUsuario: idEjecutor, salidas: { Id_Usuario_Nuevo: 'int' } },
+    );
+    const idUsuarioCliente = user.filas[0]?.Id_Usuario ?? user.salida?.Id_Usuario_Nuevo;
+
+    // 3. Crear perfil de cliente institucional
     const r = await this.sql.ejecutarSP(
       'SP_Cliente_CrearPerfil',
       {
@@ -241,22 +244,35 @@ export class ClientesService {
         Cedula_Juridica: dto.cedulaJuridica,
         Razon_Social: dto.razonSocial,
         Nombre_Contacto: dto.nombreContacto || 'Encargado de Compras',
-        Telefono_Contacto: dto.telefonoContacto || dto.telefono || '2550-0000',
-        Correo_Contacto: dto.correoContacto || 'contacto@institucion.cr',
-        Telefono: dto.telefono || '2550-0000',
+        Telefono_Contacto: dto.telefonoContacto || dto.telefono || 'Sin registrar',
+        Correo_Contacto: correoUser,
+        Telefono: dto.telefono || 'Sin registrar',
         Direccion: dto.direccion || 'Sin asignar',
         Id_Usuario: idUsuarioCliente,
       },
       { idUsuario: idEjecutor, salidas: { Id_Cliente_Nuevo: 'int' } },
     );
+
+    // 4. Despacho asíncrono no bloqueante del correo de bienvenida institucional
+    this.emailService
+      .enviarCredencialesBienvenida({
+        destinatario: correoUser,
+        nombreCliente: dto.razonSocial,
+        identificacion: dto.cedulaJuridica,
+        nombreUsuario: nomUser,
+        contrasenaTemporal: passPlano,
+      })
+      .catch((err) => console.error('Error enviando correo de bienvenida (Institucional):', err));
+
     return r.filas[0] ?? { Id_Cliente: r.salida.Id_Cliente_Nuevo };
   }
 
   async actualizar(idCliente: number, dto: ActualizarClienteDto, idEjecutor: number) {
     if (dto.correo && dto.correo.trim()) {
-      await this.sql.consultarQuery(
-        `UPDATE Usuario SET Correo = @correo WHERE Id_Usuario = (SELECT Id_Usuario FROM Cliente WHERE Id_Cliente = @id)`,
-        { correo: dto.correo.trim(), id: idCliente },
+      await this.sql.consultarSPUno(
+        'SP_Cliente_ActualizarCorreoUsuario',
+        { Id_Cliente: idCliente, NuevoCorreo: dto.correo.trim() },
+        { idUsuario: idEjecutor },
       );
     }
     return this.sql.consultarSPUno(
@@ -276,6 +292,39 @@ export class ClientesService {
       },
       { idUsuario: idEjecutor },
     );
+  }
+
+  async consultarEstadoCredito(idCliente: number) {
+    const res = await this.sql.consultarSP<any>('SP_Cliente_ConsultarEstadoCredito', {
+      Id_Cliente: idCliente,
+    });
+    const c = res[0];
+    if (!c) return null;
+
+    const saldo = Number(c.Saldo_Adeudado || 0);
+    const limiteMonto = Number(c.Limite_Credito_Monto || 300000);
+    const limiteFact = Number(c.Limite_Facturas || 3);
+    const factActivas = Number(c.Facturas_Activas_Credito || 0);
+    const disp = Number(c.Credito_Disponible != null ? c.Credito_Disponible : Math.max(0, limiteMonto - saldo));
+
+    return {
+      idCliente: c.Id_Cliente,
+      nombreCliente: c.Nombre_Cliente,
+      esMoroso: Boolean(c.Es_Moroso),
+      facturasVencidas: Number(c.Facturas_Vencidas || 0),
+      facturasActivasCredito: factActivas,
+      facturasCreditoActivas: factActivas,
+      limiteFacturas: limiteFact,
+      limiteCreditoFacturas: limiteFact,
+      saldoAdeudado: saldo,
+      deudaActual: saldo,
+      limiteCreditoMonto: limiteMonto,
+      creditoDisponible: disp,
+      saldoCreditoDisponible: disp,
+      permiteCredito: Boolean(c.Permite_Credito),
+      puedeComprarCredito: Boolean(c.Puede_Comprar_Credito),
+      puedeComprarContado: Boolean(c.Puede_Comprar_Contado),
+    };
   }
 
   consultarCondicionesPago(idCliente: number) {

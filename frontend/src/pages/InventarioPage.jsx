@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   Boxes,
+  Power,
   Search,
   Plus,
   RefreshCw,
@@ -22,7 +23,9 @@ import {
   Layers,
   Wrench,
   Sparkles,
-  RotateCcw
+  RotateCcw,
+  Building2,
+  Percent,
 } from 'lucide-react';
 import api from '../api/client';
 import { useAuth } from '../context/AuthContext';
@@ -34,6 +37,14 @@ export default function InventarioPage() {
 
   // Pestaña activa: 'PRODUCTOS' | 'SERVICIOS' | 'KARDEX'
   const [tabActiva, setTabActiva] = useState('PRODUCTOS');
+  // Pestaña 4: Asociaciones Producto - Proveedor (dbo.Producto_Proveedor)
+  const [asociacionesProveedor, setAsociacionesProveedor] = useState([]);
+  const [proveedoresActivos, setProveedoresActivos] = useState([]);
+  const [busquedaProveedor, setBusquedaProveedor] = useState('');
+  const [filtroProveedorSelect, setFiltroProveedorSelect] = useState('TODOS');
+  const [modalAsociarAbierto, setModalAsociarAbierto] = useState(false);
+  const [formAsociacion, setFormAsociacion] = useState({ idProducto: '', idProveedor: '', precioCompra: '', esPrincipal: true });
+  const [guardandoAsociacion, setGuardandoAsociacion] = useState(false);
 
   // Estados de datos
   const [productos, setProductos] = useState([]);
@@ -47,10 +58,20 @@ export default function InventarioPage() {
   const [busquedaProducto, setBusquedaProducto] = useState('');
   const [categoriaFiltro, setCategoriaFiltro] = useState('TODAS');
   const [estadoStockFiltro, setEstadoStockFiltro] = useState('TODOS'); // 'TODOS' | 'NORMAL' | 'REORDEN' | 'AGOTADO'
+  const [filtroEstadoProducto, setFiltroEstadoProducto] = useState('TODOS'); // 'TODOS' | 'ACTIVOS' | 'INACTIVOS'
+  const [filtroEstadoServicio, setFiltroEstadoServicio] = useState('TODOS'); // 'TODOS' | 'ACTIVOS' | 'INACTIVOS'
 
-  // Filtros Kárdex
+  // Filtros Kárdex Avanzado
   const [busquedaKardex, setBusquedaKardex] = useState('');
   const [filtroTipoMovimiento, setFiltroTipoMovimiento] = useState('TODOS');
+  const [filtroKardexProducto, setFiltroKardexProducto] = useState('TODOS');
+  const [filtroKardexTipoMov, setFiltroKardexTipoMov] = useState('TODOS');
+  const [filtroKardexUsuario, setFiltroKardexUsuario] = useState('TODOS');
+  const [filtroKardexFechaInicio, setFiltroKardexFechaInicio] = useState('');
+  const [filtroKardexFechaFin, setFiltroKardexFechaFin] = useState('');
+  const [filtroKardexOrden, setFiltroKardexOrden] = useState('DESC'); // 'DESC' (recientes primero) | 'ASC'
+  const [cargandoKardex, setCargandoKardex] = useState(false);
+  const [listaUsuarios, setListaUsuarios] = useState([]);
 
   // Modales
   const [modalProductoAbierto, setModalProductoAbierto] = useState(false);
@@ -62,6 +83,7 @@ export default function InventarioPage() {
     precioVenta: '',
     stockInicial: 0,
     puntoReorden: 10,
+    porcentajeIva: 13,
     estado: true,
   });
 
@@ -85,6 +107,7 @@ export default function InventarioPage() {
     idProducto: 1,
     cantidad: '',
     motivo: '',
+    idTipoMovimiento: 4, // 4 = Ajuste Negativo (Merma estándar)
   });
 
   const [guardando, setGuardando] = useState(false);
@@ -157,12 +180,15 @@ export default function InventarioPage() {
   const cargarDatos = async () => {
     setLoading(true);
     try {
-      const [resProds, resServs, resMovs, resCats, resReorden] = await Promise.all([
+      const [resProds, resServs, resMovs, resCats, resReorden, resAsoc, resPrvs, resUsus] = await Promise.all([
         api.get('/productos/inventario'),
         api.get('/servicios'),
         api.get('/inventario/movimientos/vista'),
         api.get('/catalogos/categorias'),
         api.get('/inventario/bajo-reorden'),
+        api.get('/proveedores/productos-asociados/vista'),
+        api.get('/proveedores/activos'),
+        api.get('/usuarios').catch(() => ({ data: [] })),
       ]);
 
       setProductos(resProds.data || []);
@@ -170,11 +196,67 @@ export default function InventarioPage() {
       setMovimientos(resMovs.data || []);
       setCategorias(resCats.data || []);
       setBajoReorden(resReorden.data || []);
+      setAsociacionesProveedor(resAsoc.data || []);
+      setProveedoresActivos(resPrvs.data || []);
+      setListaUsuarios(resUsus?.data || []);
     } catch (err) {
       console.error('Error cargando datos de inventario:', err);
       showToast('Error al consultar inventario', 'error');
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Filtrado de Asociaciones Producto - Proveedor
+  const proveedorPrincipalMap = useMemo(() => {
+    const map = {};
+    asociacionesProveedor.forEach((a) => {
+      if (a.EsPrincipal || !map[a.Id_Producto]) {
+        map[a.Id_Producto] = a.Nombre_Proveedor;
+      }
+    });
+    return map;
+  }, [asociacionesProveedor]);
+
+  const asociacionesFiltradas = useMemo(() => {
+    const term = busquedaProveedor.toLowerCase().trim();
+    return asociacionesProveedor.filter((a) => {
+      const coincideBusqueda =
+        !term ||
+        (a.Nombre_Producto && a.Nombre_Producto.toLowerCase().includes(term)) ||
+        (a.Nombre_Proveedor && a.Nombre_Proveedor.toLowerCase().includes(term)) ||
+        (a.Categoria && a.Categoria.toLowerCase().includes(term));
+      const coincideProveedor =
+        filtroProveedorSelect === 'TODOS' || String(a.Id_Proveedor) === String(filtroProveedorSelect);
+      return coincideBusqueda && coincideProveedor;
+    });
+  }, [asociacionesProveedor, busquedaProveedor, filtroProveedorSelect]);
+
+  const guardarAsociacion = async (e) => {
+    e.preventDefault();
+    if (!formAsociacion.idProducto || !formAsociacion.idProveedor || !formAsociacion.precioCompra) {
+      showToast('Seleccione producto, proveedor y precio de compra', 'warning');
+      return;
+    }
+    setGuardandoAsociacion(true);
+    try {
+      await api.post('/proveedores/productos-asociados', {
+        idProducto: parseInt(formAsociacion.idProducto, 10),
+        idProveedor: parseInt(formAsociacion.idProveedor, 10),
+        precioCompra: parseFloat(formAsociacion.precioCompra),
+        esPrincipal: formAsociacion.esPrincipal,
+      });
+      showToast('Asociación producto-proveedor guardada con éxito', 'success');
+      setModalAsociarAbierto(false);
+      setFormAsociacion({ idProducto: '', idProveedor: '', precioCompra: '', esPrincipal: true });
+      const res = await api.get('/proveedores/productos-asociados/vista');
+      setAsociacionesProveedor(res.data || []);
+    } catch (err) {
+      console.error('Error asociando producto:', err);
+      const msg = err.response?.data?.mensaje || err.message || 'Error al guardar'; 
+      showToast(`Error: ${msg}`, 'error');
+    } finally {
+      setGuardandoAsociacion(false);
     }
   };
 
@@ -199,6 +281,75 @@ export default function InventarioPage() {
     };
   }, [productos, servicios, bajoReorden, movimientos]);
 
+  const consultarKardexFiltrado = async (filtrosPersonalizados = {}) => {
+    setCargandoKardex(true);
+    try {
+      const fInicio = filtrosPersonalizados.fechaInicio ?? filtroKardexFechaInicio;
+      const fFin = filtrosPersonalizados.fechaFin ?? filtroKardexFechaFin;
+
+      if (fInicio && fFin && fInicio > fFin) {
+        showToast('La fecha inicial no puede ser posterior a la fecha final', 'warning');
+        setCargandoKardex(false);
+        return;
+      }
+
+      const params = {};
+      const prod = filtrosPersonalizados.idProducto ?? filtroKardexProducto;
+      if (prod && prod !== 'TODOS') params.idProducto = Number(prod);
+
+      const tipo = filtrosPersonalizados.idTipoMovimiento ?? filtroKardexTipoMov;
+      if (tipo && tipo !== 'TODOS') params.idTipoMovimiento = Number(tipo);
+
+      const usu = filtrosPersonalizados.idUsuario ?? filtroKardexUsuario;
+      if (usu && usu !== 'TODOS') params.idUsuario = Number(usu);
+
+      if (fInicio) params.fechaInicio = fInicio;
+      if (fFin) params.fechaFin = fFin;
+
+      const orden = filtrosPersonalizados.orden ?? filtroKardexOrden;
+      params.ordenAscendente = orden === 'ASC';
+
+      const res = await api.get('/inventario/movimientos', { params });
+      setMovimientos(res.data || []);
+    } catch (err) {
+      console.error('Error consultando kárdex:', err);
+      const msg = err.response?.data?.mensaje || 'Error al consultar movimientos';
+      showToast(msg, 'error');
+    } finally {
+      setCargandoKardex(false);
+    }
+  };
+
+  const handleToggleEstadoProducto = async (prod) => {
+    const nuevoEstado = !prod.Estado;
+    const accion = nuevoEstado ? 'activar' : 'desactivar';
+    if (!window.confirm(`¿Está seguro de que desea ${accion} el producto "${prod.Nombre}"?`)) return;
+
+    try {
+      await api.patch(`/productos/${prod.Id_Producto}/estado`, { estado: nuevoEstado });
+      showToast(`Producto ${nuevoEstado ? 'activado' : 'desactivado'} con éxito`, 'success');
+      cargarDatos();
+    } catch (err) {
+      console.error('Error al cambiar estado de producto:', err);
+      showToast('Error al actualizar estado del producto', 'error');
+    }
+  };
+
+  const handleToggleEstadoServicio = async (serv) => {
+    const nuevoEstado = !serv.Estado;
+    const accion = nuevoEstado ? 'activar' : 'desactivar';
+    if (!window.confirm(`¿Está seguro de que desea ${accion} el servicio "${serv.Nombre}"?`)) return;
+
+    try {
+      await api.patch(`/productos/servicios/${serv.Id_Servicio}/estado`, { estado: nuevoEstado });
+      showToast(`Servicio ${nuevoEstado ? 'activado' : 'desactivado'} con éxito`, 'success');
+      cargarDatos();
+    } catch (err) {
+      console.error('Error al cambiar estado de servicio:', err);
+      showToast('Error al actualizar estado del servicio', 'error');
+    }
+  };
+
   // Filtrado de Productos
   const productosFiltrados = useMemo(() => {
     const term = busquedaProducto.toLowerCase().trim();
@@ -210,6 +361,9 @@ export default function InventarioPage() {
       if (estadoStockFiltro === 'REORDEN' && (p.Stock_Actual > p.Punto_Reorden || p.Stock_Actual === 0)) return false;
       if (estadoStockFiltro === 'AGOTADO' && p.Stock_Actual > 0) return false;
 
+      if (filtroEstadoProducto === 'ACTIVOS' && !p.Estado) return false;
+      if (filtroEstadoProducto === 'INACTIVOS' && p.Estado) return false;
+
       if (!term) return true;
       return (
         p.Nombre.toLowerCase().includes(term) ||
@@ -217,37 +371,45 @@ export default function InventarioPage() {
         p.Id_Producto.toString() === term
       );
     });
-  }, [productos, busquedaProducto, categoriaFiltro, estadoStockFiltro]);
+  }, [productos, busquedaProducto, categoriaFiltro, estadoStockFiltro, filtroEstadoProducto]);
 
   // Filtrado de Servicios
   const serviciosFiltrados = useMemo(() => {
     const term = busquedaProducto.toLowerCase().trim();
-    if (!term) return servicios;
-    return servicios.filter(
-      (s) =>
+    return servicios.filter((s) => {
+      if (filtroEstadoServicio === 'ACTIVOS' && !s.Estado) return false;
+      if (filtroEstadoServicio === 'INACTIVOS' && s.Estado) return false;
+
+      if (!term) return true;
+      return (
         s.Nombre.toLowerCase().includes(term) ||
         (s.Descripcion && s.Descripcion.toLowerCase().includes(term)) ||
         s.Id_Servicio.toString() === term
-    );
-  }, [servicios, busquedaProducto]);
+      );
+    });
+  }, [servicios, busquedaProducto, filtroEstadoServicio]);
 
   // Filtrado de Kárdex
   const movimientosFiltrados = useMemo(() => {
     const term = busquedaKardex.toLowerCase().trim();
 
     return movimientos.filter((m) => {
-      if (filtroTipoMovimiento !== 'TODOS' && m.Tipo_Movimiento !== filtroTipoMovimiento) return false;
-
       if (!term) return true;
+      const prod = String(m.Producto || m.Nombre_Producto || '').toLowerCase();
+      const tipo = String(m.Tipo_Movimiento || '').toLowerCase();
+      const mot = String(m.Motivo || '').toLowerCase();
+      const resp = String(m.Responsable || m.Usuario_Responsable || '').toLowerCase();
+      const id = String(m.Id_Movimiento_Inventario || m.Id_Movimiento || '');
+
       return (
-        m.Producto.toLowerCase().includes(term) ||
-        m.Tipo_Movimiento.toLowerCase().includes(term) ||
-        (m.Motivo && m.Motivo.toLowerCase().includes(term)) ||
-        m.Responsable.toLowerCase().includes(term) ||
-        m.Id_Movimiento_Inventario.toString() === term
+        prod.includes(term) ||
+        tipo.includes(term) ||
+        mot.includes(term) ||
+        resp.includes(term) ||
+        id === term
       );
     });
-  }, [movimientos, busquedaKardex, filtroTipoMovimiento]);
+  }, [movimientos, busquedaKardex]);
 
   // ================= ACCIONES PRODUCTO =================
   const abrirCrearProducto = () => {
@@ -259,6 +421,7 @@ export default function InventarioPage() {
       precioVenta: '',
       stockInicial: 0,
       puntoReorden: 10,
+      porcentajeIva: 13,
       estado: true,
     });
     setModalProductoAbierto(true);
@@ -274,6 +437,7 @@ export default function InventarioPage() {
       precioVenta: prod.Precio_Venta,
       stockInicial: prod.Stock_Actual,
       puntoReorden: prod.Punto_Reorden,
+      porcentajeIva: prod.Porcentaje_IVA != null ? Number(prod.Porcentaje_IVA) : 13,
       estado: prod.Estado ?? true,
     });
     setModalProductoAbierto(true);
@@ -296,6 +460,7 @@ export default function InventarioPage() {
           descripcion: formDataProducto.descripcion.trim() || undefined,
           precioVenta: Number(formDataProducto.precioVenta),
           puntoReorden: Number(formDataProducto.puntoReorden),
+          porcentajeIva: Number(formDataProducto.porcentajeIva || 13),
           estado: Boolean(formDataProducto.estado),
         });
         showToast('Producto actualizado con éxito', 'success');
@@ -308,6 +473,7 @@ export default function InventarioPage() {
           precioVenta: Number(formDataProducto.precioVenta),
           stockInicial: Number(formDataProducto.stockInicial || 0),
           puntoReorden: Number(formDataProducto.puntoReorden || 10),
+          porcentajeIva: Number(formDataProducto.porcentajeIva || 13),
         });
         showToast('Producto registrado exitosamente', 'success');
       }
@@ -455,6 +621,7 @@ export default function InventarioPage() {
           idProducto: Number(formDataManual.idProducto),
           cantidad: cant,
           motivo: formDataManual.motivo.trim(),
+          idTipoMovimiento: Number(formDataManual.idTipoMovimiento || 4),
         });
         showToast(`Salida de ${cant} unidades registrada con éxito`, 'success');
       }
@@ -628,6 +795,17 @@ export default function InventarioPage() {
           <History className="w-4 h-4" />
           <span>Libro Kárdex de Movimientos ({movimientos.length})</span>
         </button>
+        <button
+          onClick={() => setTabActiva('PROVEEDORES')}
+          className={`flex items-center gap-2 px-4 py-2 text-xs font-bold rounded-xl transition ${
+            tabActiva === 'PROVEEDORES'
+              ? 'bg-[#132B20] text-white shadow-sm'
+              : 'text-slate-600 hover:bg-slate-100'
+          }`}
+        >
+          <Building2 className="w-4 h-4" />
+          <span>Proveedores por Producto ({asociacionesProveedor.length})</span>
+        </button>
       </div>
 
       {/* ================= TAB 1: PRODUCTOS ================= */}
@@ -672,6 +850,17 @@ export default function InventarioPage() {
                 <option value="REORDEN">En / Bajo Reorden</option>
                 <option value="AGOTADO">Agotados (0)</option>
               </select>
+
+              {/* Filtro Activo / Inactivo */}
+              <select
+                value={filtroEstadoProducto}
+                onChange={(e) => setFiltroEstadoProducto(e.target.value)}
+                className="text-xs bg-[#FAF7F0] border border-[#DFD5C4] rounded-xl px-3 py-2 text-[#132B20] font-medium focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="TODOS">Todos los Estados</option>
+                <option value="ACTIVOS">Solo Activos</option>
+                <option value="INACTIVOS">Solo Inactivos</option>
+              </select>
             </div>
           </div>
 
@@ -700,6 +889,7 @@ export default function InventarioPage() {
                       <th className="py-3 px-4 text-center">Stock Físico</th>
                       <th className="py-3 px-4 text-center">Punto Reorden</th>
                       <th className="py-3 px-4 text-center">Disponibilidad</th>
+                      <th className="py-3 px-4 text-center">Estado</th>
                       <th className="py-3 px-4 text-center">Acciones</th>
                     </tr>
                   </thead>
@@ -714,6 +904,19 @@ export default function InventarioPage() {
 
                           <td className="py-3 px-4">
                             <span className="font-bold text-[#132B20] block">{prod.Nombre}</span>
+                            <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+                              {Number(prod.Porcentaje_IVA) === 2 && (
+                                <span className="px-1.5 py-0.2 rounded text-[9.5px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
+                                  IVA 2% Libros (Ley 9635)
+                                </span>
+                              )}
+                              {proveedorPrincipalMap[prod.Id_Producto] && (
+                                <span className="inline-flex items-center gap-1 text-[10px] text-slate-600 font-semibold bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
+                                  <Building2 className="w-3 h-3 text-[#2D5E46]" />
+                                  <span>{proveedorPrincipalMap[prod.Id_Producto]}</span>
+                                </span>
+                              )}
+                            </div>
                           </td>
 
                           <td className="py-3 px-4">
@@ -728,7 +931,7 @@ export default function InventarioPage() {
 
                           <td className="py-3 px-4 text-center">
                             <span
-                              className={`inline-block px-2.5 py-1 rounded-full font-black text-xs ${
+                              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full font-black text-xs ${
                                 esAgotado
                                   ? 'bg-rose-100 text-rose-700 border border-rose-200'
                                   : stockBajo
@@ -736,6 +939,12 @@ export default function InventarioPage() {
                                   : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
                               }`}
                             >
+                              {(stockBajo || esAgotado) && (
+                                <span className="relative flex h-2 w-2">
+                                  <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${esAgotado ? 'bg-rose-400' : 'bg-amber-400'}`}></span>
+                                  <span className={`relative inline-flex rounded-full h-2 w-2 ${esAgotado ? 'bg-rose-600' : 'bg-amber-600'}`}></span>
+                                </span>
+                              )}
                               {prod.Stock_Actual} uds
                             </span>
                           </td>
@@ -759,7 +968,32 @@ export default function InventarioPage() {
                           </td>
 
                           <td className="py-3 px-4 text-center">
+                            <span
+                              className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                                prod.Estado
+                                  ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                                  : 'bg-rose-100 text-rose-800 border border-rose-200'
+                              }`}
+                            >
+                              {prod.Estado ? 'Activo' : 'Inactivo'}
+                            </span>
+                          </td>
+
+                          <td className="py-3 px-4 text-center">
                             <div className="flex items-center justify-center gap-1.5">
+                              {/* Activar / Desactivar */}
+                              <button
+                                onClick={() => handleToggleEstadoProducto(prod)}
+                                className={`p-1.5 rounded-lg transition ${
+                                  prod.Estado
+                                    ? 'text-rose-600 hover:text-rose-800 hover:bg-rose-50'
+                                    : 'text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50'
+                                }`}
+                                title={prod.Estado ? 'Desactivar Producto' : 'Activar Producto'}
+                              >
+                                <Power className="w-4 h-4" />
+                              </button>
+
                               {/* Ajuste de Stock */}
                               <button
                                 onClick={() => abrirAjuste(prod)}
@@ -805,13 +1039,25 @@ export default function InventarioPage() {
               />
             </div>
 
-            <button
-              onClick={abrirCrearServicio}
-              className="flex items-center gap-1.5 px-3.5 py-2 bg-[#5C3622] hover:bg-[#4A2B1B] text-white text-xs font-bold rounded-xl shadow-md transition"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Nuevo Servicio Escolar</span>
-            </button>
+            <div className="flex items-center gap-2">
+              <select
+                value={filtroEstadoServicio}
+                onChange={(e) => setFiltroEstadoServicio(e.target.value)}
+                className="text-xs bg-[#FAF7F0] border border-[#DFD5C4] rounded-xl px-3 py-2 text-[#132B20] font-medium focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="TODOS">Todos los Estados</option>
+                <option value="ACTIVOS">Solo Activos</option>
+                <option value="INACTIVOS">Solo Inactivos</option>
+              </select>
+
+              <button
+                onClick={abrirCrearServicio}
+                className="flex items-center gap-1.5 px-3.5 py-2 bg-[#5C3622] hover:bg-[#4A2B1B] text-white text-xs font-bold rounded-xl shadow-md transition"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Nuevo Servicio Escolar</span>
+              </button>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -842,13 +1088,27 @@ export default function InventarioPage() {
                     </span>
                   </div>
 
-                  <button
-                    onClick={() => abrirEditarServicio(serv)}
-                    className="p-1.5 text-[#5C3622] hover:text-[#5C3622] hover:bg-[#F3ECE0] rounded-lg transition"
-                    title="Editar Servicio"
-                  >
-                    <Edit2 className="w-4 h-4" />
-                  </button>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => handleToggleEstadoServicio(serv)}
+                      className={`p-1.5 rounded-lg transition ${
+                        serv.Estado
+                          ? 'text-rose-600 hover:text-rose-800 hover:bg-rose-50'
+                          : 'text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50'
+                      }`}
+                      title={serv.Estado ? 'Desactivar Servicio' : 'Activar Servicio'}
+                    >
+                      <Power className="w-4 h-4" />
+                    </button>
+
+                    <button
+                      onClick={() => abrirEditarServicio(serv)}
+                      className="p-1.5 text-[#5C3622] hover:text-[#5C3622] hover:bg-[#F3ECE0] rounded-lg transition"
+                      title="Editar Servicio"
+                    >
+                      <Edit2 className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
               </div>
             ))}
@@ -859,32 +1119,135 @@ export default function InventarioPage() {
       {/* ================= TAB 3: LIBRO KÁRDEX ================= */}
       {tabActiva === 'KARDEX' && (
         <div className="space-y-4">
-          {/* Filtros Kárdex */}
-          <div className="bg-white rounded-2xl border border-[#DFD5C4] p-4 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3">
-            <div className="relative flex-1 max-w-md">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                value={busquedaKardex}
-                onChange={(e) => setBusquedaKardex(e.target.value)}
-                placeholder="Buscar movimiento por producto, motivo o usuario..."
-                className="w-full pl-9 pr-4 py-2 text-xs bg-[#FAF7F0] border border-[#DFD5C4] rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
+          {/* Filtros Kárdex Avanzado */}
+          <div className="bg-white rounded-2xl border border-[#DFD5C4] p-4 shadow-sm space-y-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3 text-xs">
+              {/* Producto */}
+              <div>
+                <label className="block text-[11px] font-bold text-[#132B20] mb-1">Producto</label>
+                <select
+                  value={filtroKardexProducto}
+                  onChange={(e) => setFiltroKardexProducto(e.target.value)}
+                  className="w-full px-2.5 py-1.5 bg-[#FAF7F0] border border-[#DFD5C4] rounded-xl text-[#132B20] font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 truncate"
+                >
+                  <option value="TODOS">Todos los Productos</option>
+                  {productos.map((p) => (
+                    <option key={p.Id_Producto} value={p.Id_Producto}>
+                      {p.Nombre}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Fecha Inicial */}
+              <div>
+                <label className="block text-[11px] font-bold text-[#132B20] mb-1">Fecha Inicial</label>
+                <input
+                  type="date"
+                  value={filtroKardexFechaInicio}
+                  onChange={(e) => setFiltroKardexFechaInicio(e.target.value)}
+                  className="w-full px-2.5 py-1.5 bg-[#FAF7F0] border border-[#DFD5C4] rounded-xl text-[#132B20] focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              {/* Fecha Final */}
+              <div>
+                <label className="block text-[11px] font-bold text-[#132B20] mb-1">Fecha Final</label>
+                <input
+                  type="date"
+                  value={filtroKardexFechaFin}
+                  onChange={(e) => setFiltroKardexFechaFin(e.target.value)}
+                  className="w-full px-2.5 py-1.5 bg-[#FAF7F0] border border-[#DFD5C4] rounded-xl text-[#132B20] focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              {/* Tipo de Movimiento */}
+              <div>
+                <label className="block text-[11px] font-bold text-[#132B20] mb-1">Tipo Movimiento</label>
+                <select
+                  value={filtroKardexTipoMov}
+                  onChange={(e) => setFiltroKardexTipoMov(e.target.value)}
+                  className="w-full px-2.5 py-1.5 bg-[#FAF7F0] border border-[#DFD5C4] rounded-xl text-[#132B20] font-medium focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="TODOS">Todos los Tipos</option>
+                  <option value="1">Entrada por Compra</option>
+                  <option value="2">Salida por Venta</option>
+                  <option value="3">Ajuste Positivo</option>
+                  <option value="4">Ajuste Negativo (Merma)</option>
+                  <option value="5">Devolución de Cliente</option>
+                  <option value="6">Devolución a Proveedor</option>
+                </select>
+              </div>
+
+              {/* Usuario Responsable */}
+              <div>
+                <label className="block text-[11px] font-bold text-[#132B20] mb-1">Responsable</label>
+                <select
+                  value={filtroKardexUsuario}
+                  onChange={(e) => setFiltroKardexUsuario(e.target.value)}
+                  className="w-full px-2.5 py-1.5 bg-[#FAF7F0] border border-[#DFD5C4] rounded-xl text-[#132B20] font-medium focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="TODOS">Todos los Usuarios</option>
+                  {listaUsuarios.map((u) => (
+                    <option key={u.Id_Usuario} value={u.Id_Usuario}>
+                      {u.Nombre_Usuario}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Orden Cronológico */}
+              <div>
+                <label className="block text-[11px] font-bold text-[#132B20] mb-1">Orden Cronológico</label>
+                <select
+                  value={filtroKardexOrden}
+                  onChange={(e) => setFiltroKardexOrden(e.target.value)}
+                  className="w-full px-2.5 py-1.5 bg-[#FAF7F0] border border-[#DFD5C4] rounded-xl text-[#132B20] font-medium focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="DESC">Más recientes primero (Desc)</option>
+                  <option value="ASC">Más antiguos primero (Asc)</option>
+                </select>
+              </div>
             </div>
 
-            <div className="flex items-center gap-2">
-              <select
-                value={filtroTipoMovimiento}
-                onChange={(e) => setFiltroTipoMovimiento(e.target.value)}
-                className="text-xs bg-[#FAF7F0] border border-[#DFD5C4] rounded-xl px-3 py-2 text-[#132B20] font-medium focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="TODOS">Todos los Movimientos</option>
-                <option value="Venta">Venta (Salida)</option>
-                <option value="Compra">Compra (Entrada)</option>
-                <option value="Ajuste Positivo">Ajuste Positivo</option>
-                <option value="Ajuste Negativo">Ajuste Negativo</option>
-                <option value="Devolución">Devolución</option>
-              </select>
+            <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+              <span className="text-[11px] text-slate-500 font-medium">
+                {movimientos.length} movimientos de inventario en el período consultado
+              </span>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFiltroKardexProducto('TODOS');
+                    setFiltroKardexTipoMov('TODOS');
+                    setFiltroKardexUsuario('TODOS');
+                    setFiltroKardexFechaInicio('');
+                    setFiltroKardexFechaFin('');
+                    setFiltroKardexOrden('DESC');
+                    consultarKardexFiltrado({
+                      idProducto: 'TODOS',
+                      idTipoMovimiento: 'TODOS',
+                      idUsuario: 'TODOS',
+                      fechaInicio: '',
+                      fechaFin: '',
+                      orden: 'DESC',
+                    });
+                  }}
+                  className="px-3 py-1.5 text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition"
+                >
+                  Limpiar Filtros
+                </button>
+                <button
+                  type="button"
+                  onClick={() => consultarKardexFiltrado()}
+                  disabled={cargandoKardex}
+                  className="px-4 py-1.5 bg-[#132B20] hover:bg-[#1A3D2F] text-white text-xs font-bold rounded-xl flex items-center gap-1.5 shadow-sm transition disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${cargandoKardex ? 'animate-spin' : ''}`} />
+                  <span>Consultar Kárdex</span>
+                </button>
+              </div>
             </div>
           </div>
 
@@ -964,6 +1327,129 @@ export default function InventarioPage() {
                       </tr>
                     );
                   })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ================= TAB 4: PROVEEDORES HOMOLOGADOS (dbo.Producto_Proveedor) ================= */}
+      {tabActiva === 'PROVEEDORES' && (
+        <div className="space-y-4">
+          {/* Barra de Filtros y Acción de Homologación */}
+          <div className="bg-white rounded-2xl border border-[#DFD5C4] p-4 shadow-sm flex flex-col md:flex-row items-center justify-between gap-3">
+            <div className="flex flex-1 items-center gap-2 w-full">
+              <div className="relative flex-1">
+                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  value={busquedaProveedor}
+                  onChange={(e) => setBusquedaProveedor(e.target.value)}
+                  placeholder="Buscar por producto, categoría o proveedor homologado..."
+                  className="w-full pl-9 pr-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#2D5E46]"
+                />
+              </div>
+
+              <select
+                value={filtroProveedorSelect}
+                onChange={(e) => setFiltroProveedorSelect(e.target.value)}
+                className="px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#2D5E46] text-slate-700"
+              >
+                <option value="TODOS">Todos los Proveedores</option>
+                {proveedoresActivos.map((prv) => (
+                  <option key={prv.Id_Proveedor} value={prv.Id_Proveedor}>
+                    {prv.Nombre_Proveedor}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <button
+              onClick={() => setModalAsociarAbierto(true)}
+              className="flex items-center gap-1.5 px-4 py-2 bg-[#2D5E46] hover:bg-[#1E4331] text-white text-xs font-bold rounded-xl shadow-sm transition whitespace-nowrap"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Homologar Producto con Proveedor</span>
+            </button>
+          </div>
+
+          {/* Tabla de Asociaciones */}
+          <div className="bg-white rounded-2xl border border-[#DFD5C4] shadow-sm overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-[#FAF7F0] text-[#5C3622] uppercase tracking-wider font-bold border-b border-[#DFD5C4]">
+                  <tr>
+                    <th className="py-3 px-4">Producto en Catálogo</th>
+                    <th className="py-3 px-4">Categoría</th>
+                    <th className="py-3 px-4">Proveedor Homologado</th>
+                    <th className="py-3 px-4">Tipo Proveedor</th>
+                    <th className="py-3 px-4 text-right">Costo Compra (Mayorista)</th>
+                    <th className="py-3 px-4 text-right">Precio Venta (PVP)</th>
+                    <th className="py-3 px-4 text-right">Margen Bruto</th>
+                    <th className="py-3 px-4 text-center">Rol Proveedor</th>
+                    <th className="py-3 px-4 text-center">Estado</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {asociacionesFiltradas.length === 0 ? (
+                    <tr>
+                      <td colSpan="9" className="py-10 text-center text-slate-400">
+                        No se encontraron homologaciones de producto-proveedor registradas.
+                      </td>
+                    </tr>
+                  ) : (
+                    asociacionesFiltradas.map((asoc) => {
+                      const costo = Number(asoc.Precio_Compra || 0);
+                      const venta = Number(asoc.Precio_Venta || 0);
+                      const margenColones = venta - costo;
+                      const margenPct = venta > 0 ? ((margenColones / venta) * 100).toFixed(1) : 0;
+                      const esPrincipal = asoc.EsPrincipal === 1 || asoc.EsPrincipal === true;
+
+                      return (
+                        <tr key={asoc.Id_Producto_Proveedor} className="hover:bg-slate-50 transition">
+                          <td className="py-3 px-4 font-bold text-slate-800">
+                            {asoc.Nombre_Producto}
+                          </td>
+                          <td className="py-3 px-4">
+                            <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 text-[10px] font-semibold">
+                              {asoc.Categoria}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 font-semibold text-[#132B20]">
+                            {asoc.Nombre_Proveedor}
+                          </td>
+                          <td className="py-3 px-4 text-slate-500 text-[11px]">
+                            {asoc.Tipo_Proveedor}
+                          </td>
+                          <td className="py-3 px-4 text-right font-bold text-amber-900">
+                            ₡{costo.toLocaleString('es-CR')}
+                          </td>
+                          <td className="py-3 px-4 text-right font-bold text-slate-800">
+                            ₡{venta.toLocaleString('es-CR')}
+                          </td>
+                          <td className="py-3 px-4 text-right">
+                            <span className="font-bold text-emerald-700">₡{margenColones.toLocaleString('es-CR')}</span>
+                            <span className="text-[10px] text-emerald-600 block">({margenPct}%)</span>
+                          </td>
+                          <td className="py-3 px-4 text-center">
+                            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase ${
+                              esPrincipal
+                                ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                                : 'bg-slate-100 text-slate-600 border border-slate-200'
+                            }`}>
+                              {esPrincipal ? 'Principal (Prioritario)' : 'Secundario'}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 text-center">
+                            <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 text-[10px] font-bold">
+                              Activo
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
                 </tbody>
               </table>
             </div>
@@ -1080,6 +1566,47 @@ export default function InventarioPage() {
                   </p>
                 </div>
               )}
+
+              {/* Régimen de IVA y Tarifa Reducida Ley 9635 */}
+              <div className="bg-[#FAF7F0] border border-[#DFD5C4] rounded-xl p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="font-bold text-[#132B20] text-xs flex items-center gap-1.5">
+                    <Percent className="w-4 h-4 text-emerald-700" />
+                    Régimen de IVA (Ley N.° 9635 Costa Rica)
+                  </label>
+                  <span className={`px-2 py-0.5 rounded text-[10px] font-black ${
+                    Number(formDataProducto.porcentajeIva) === 2 
+                      ? 'bg-amber-100 text-amber-800 border border-amber-300' 
+                      : 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                  }`}>
+                    {Number(formDataProducto.porcentajeIva)}% IVA
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2 pt-1">
+                  <input
+                    type="checkbox"
+                    id="chkTasaReducidaLibros"
+                    checked={Number(formDataProducto.porcentajeIva) === 2}
+                    onChange={(e) =>
+                      setFormDataProducto({
+                        ...formDataProducto,
+                        porcentajeIva: e.target.checked ? 2 : 13,
+                      })
+                    }
+                    className="w-4 h-4 rounded text-amber-600 focus:ring-amber-500 cursor-pointer"
+                  />
+                  <label
+                    htmlFor="chkTasaReducidaLibros"
+                    className="text-[11px] font-bold text-[#132B20] cursor-pointer"
+                  >
+                    Tarifa Reducida 2% IVA (Libros y Textos Escolares - Ley 9635)
+                  </label>
+                </div>
+                <p className="text-[10px] text-slate-500 leading-tight">
+                  Aplica tarifa reducida del 2% para libros de texto escolar y literatura didáctica (-11% sobre la tarifa general del 13%).
+                </p>
+              </div>
 
               <div className="pt-2 flex items-center justify-end gap-2 border-t border-slate-100">
                 <button
@@ -1295,6 +1822,22 @@ export default function InventarioPage() {
                   ))}
                 </select>
               </div>
+
+              {tipoMovimientoManual === 'SALIDA' && (
+                <div>
+                  <label className="block font-bold text-[#132B20] mb-1">Naturaleza / Motivo de Salida *</label>
+                  <select
+                    value={formDataManual.idTipoMovimiento}
+                    onChange={(e) => setFormDataManual({ ...formDataManual, idTipoMovimiento: e.target.value })}
+                    className="w-full px-3 py-2 bg-[#FAF7F0] border border-[#DFD5C4] rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium"
+                  >
+                    <option value="4">Ajuste Negativo (Merma estándar en bodega)</option>
+                    <option value="6">Devolución a Proveedor (Producto defectuoso)</option>
+                    <option value="4">Baja por Daño / Deterioro en Exhibición</option>
+                    <option value="4">Baja por Vencimiento / Obsolescencia</option>
+                  </select>
+                </div>
+              )}
 
               <div>
                 <label className="block font-bold text-[#132B20] mb-1">Cantidad a Mover *</label>
@@ -1515,6 +2058,119 @@ export default function InventarioPage() {
           </div>
         </div>
       )}
+      {/* ================= MODAL ASOCIAR PRODUCTO CON PROVEEDOR ================= */}
+      {modalAsociarAbierto && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#132B20]/60 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl border border-[#DFD5C4] overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="bg-[#132B20] text-white p-5 flex items-center justify-between">
+              <h3 className="font-bold text-base flex items-center gap-2">
+                <Building2 className="w-5 h-5 text-emerald-400" />
+                <span>Homologar Producto con Proveedor</span>
+              </h3>
+              <button
+                onClick={() => setModalAsociarAbierto(false)}
+                className="p-1 text-slate-400 hover:text-white rounded-lg transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={guardarAsociacion} className="p-6 space-y-4 text-xs">
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Producto en Catálogo *</label>
+                <select
+                  value={formAsociacion.idProducto}
+                  onChange={(e) => setFormAsociacion({ ...formAsociacion, idProducto: e.target.value })}
+                  required
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#2D5E46]"
+                >
+                  <option value="">Seleccione un producto...</option>
+                  {productos.map((prod) => (
+                    <option key={prod.Id_Producto} value={prod.Id_Producto}>
+                      {prod.Nombre} ({prod.Categoria})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Proveedor Distribuidor *</label>
+                <select
+                  value={formAsociacion.idProveedor}
+                  onChange={(e) => setFormAsociacion({ ...formAsociacion, idProveedor: e.target.value })}
+                  required
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#2D5E46]"
+                >
+                  <option value="">Seleccione un proveedor...</option>
+                  {proveedoresActivos.map((prv) => (
+                    <option key={prv.Id_Proveedor} value={prv.Id_Proveedor}>
+                      {prv.Nombre_Proveedor} ({prv.Tipo_Proveedor})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Precio de Compra Mayorista (₡) *</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  required
+                  value={formAsociacion.precioCompra}
+                  onChange={(e) => setFormAsociacion({ ...formAsociacion, precioCompra: e.target.value })}
+                  placeholder="Ej. 850.00"
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#2D5E46]"
+                />
+                <p className="text-[10px] text-slate-400 mt-0.5">
+                  Costo de adquisición que se utilizará para órdenes de compra y cálculo de rentabilidad.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2 pt-1">
+                <input
+                  type="checkbox"
+                  id="checkEsPrincipal"
+                  checked={formAsociacion.esPrincipal}
+                  onChange={(e) => setFormAsociacion({ ...formAsociacion, esPrincipal: e.target.checked })}
+                  className="w-4 h-4 text-[#2D5E46] rounded focus:ring-[#2D5E46]"
+                />
+                <label htmlFor="checkEsPrincipal" className="font-semibold text-slate-700 select-none">
+                  Designar como Proveedor Principal (Prioritario para Reabastecimiento)
+                </label>
+              </div>
+
+              <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setModalAsociarAbierto(false)}
+                  className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-xl transition font-semibold"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={guardandoAsociacion}
+                  className="flex items-center gap-1.5 px-4 py-2 bg-[#2D5E46] hover:bg-[#1E4331] text-white font-bold rounded-xl shadow-sm transition disabled:opacity-50"
+                >
+                  {guardandoAsociacion ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>Guardando...</span>
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      <span>Guardar Homologación</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

@@ -44,6 +44,12 @@ export class CrearProductoDto {
   @Min(0)
   @IsOptional()
   puntoReorden?: number;
+
+  @ApiPropertyOptional({ example: 13.0, default: 13.0, description: 'Tarifa de IVA (2% para libros escolares - Ley 9635, 13% general)' })
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  porcentajeIva?: number;
 }
 
 export class ActualizarProductoDto {
@@ -72,6 +78,12 @@ export class ActualizarProductoDto {
   @IsInt()
   @Min(0)
   puntoReorden: number;
+
+  @ApiPropertyOptional({ example: 13.0, description: 'Tarifa de IVA (2% para libros escolares - Ley 9635, 13% general)' })
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  porcentajeIva?: number;
 
   @ApiProperty({ example: true })
   @IsBoolean()

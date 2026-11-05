@@ -27,7 +27,10 @@ export class FacturacionService {
   async generarFactura(dto: GenerarFacturaDto, idUsuario: number) {
     const r = await this.sql.ejecutarSP(
       'SP_Factura_Generar',
-      { Id_Venta: dto.idVenta },
+      {
+        Id_Venta: dto.idVenta,
+        Clave_Numerica_Fiscal: dto.claveNumericaFiscal ?? null,
+      },
       { idUsuario, salidas: { Id_Factura_Nueva: 'int' } },
     );
     return r.filas[0] ?? { Id_Factura: r.salida.Id_Factura_Nueva };

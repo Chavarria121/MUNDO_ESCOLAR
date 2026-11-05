@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, BadRequestException } from '@nestjs/common';
 import { SqlService } from '../database/sql.service';
 import {
   AjusteInventarioDto,
@@ -17,11 +17,16 @@ export class InventarioService {
   }
 
   consultarMovimientos(dto: ConsultarMovimientosDto) {
+    if (dto.fechaInicio && dto.fechaFin && new Date(dto.fechaInicio) > new Date(dto.fechaFin)) {
+      throw new BadRequestException('La fecha inicial no puede ser posterior a la fecha final.');
+    }
     return this.sql.consultarSP('SP_Inventario_ConsultarMovimientos', {
       Id_Producto: dto.idProducto ?? null,
       FechaInicio: dto.fechaInicio ? new Date(dto.fechaInicio) : null,
       FechaFin: dto.fechaFin ? new Date(dto.fechaFin) : null,
       Id_Tipo_Movimiento: dto.idTipoMovimiento ?? null,
+      Id_Usuario: dto.idUsuario ?? null,
+      OrdenAscendente: dto.ordenAscendente ? 1 : 0,
     });
   }
 
@@ -51,6 +56,7 @@ export class InventarioService {
         Cantidad: dto.cantidad,
         Id_Usuario: idUsuario,
         Motivo: dto.motivo,
+        Id_Tipo_Movimiento: dto.idTipoMovimiento ?? null,
       },
       { idUsuario },
     );

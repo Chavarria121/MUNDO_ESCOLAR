@@ -1,7 +1,11 @@
 import axios from 'axios';
 
+// Detección dinámica de host (soporta localhost y la IP de Tailscale del servidor)
+const host = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
+const apiBaseUrl = import.meta.env.VITE_API_URL || `http://${host}:3001/api`;
+
 const api = axios.create({
-  baseURL: 'http://localhost:3001/api',
+  baseURL: apiBaseUrl,
   headers: {
     'Content-Type': 'application/json',
   },

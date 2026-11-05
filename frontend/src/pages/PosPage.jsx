@@ -15,14 +15,18 @@ import {
   Receipt,
   Printer,
   RefreshCw,
-  Sparkles,
   User,
   Layers,
   ArrowRight,
   X,
   Clock,
-  ChevronDown
+  ChevronDown,
+  Copy,
+  Check,
+  Keyboard
 } from 'lucide-react';
+import QrFiscal from '../components/QrFiscal';
+import { generarClaveHacienda50, formatearClaveHacienda, generarQrFiscalUrl, generarMensajeWhatsAppFactura } from '../utils/haciendaUtils';
 import api from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
@@ -30,6 +34,18 @@ import { useToast } from '../context/ToastContext';
 export default function PosPage({ onNavigateToFacturacion }) {
   const { user } = useAuth();
   const { showToast } = useToast();
+
+  // Referencias y estados de atajos de teclado
+  const inputBusquedaRef = useRef(null);
+  const [claveCopiada, setClaveCopiada] = useState(false);
+
+  const copiarClaveHacienda = (clave) => {
+    if (!clave) return;
+    navigator.clipboard.writeText(clave);
+    setClaveCopiada(true);
+    showToast('Clave numérica de 50 dígitos copiada al portapapeles', 'success');
+    setTimeout(() => setClaveCopiada(false), 2500);
+  };
 
   
   
@@ -54,27 +70,35 @@ export default function PosPage({ onNavigateToFacturacion }) {
   const [clienteSeleccionado, setClienteSeleccionado] = useState(null);
   const [condicionSeleccionada, setCondicionSeleccionada] = useState(1); // 1 = Contado
   const [condicionesAutorizadasCliente, setCondicionesAutorizadasCliente] = useState([]);
+  const [estadoCreditoCliente, setEstadoCreditoCliente] = useState(null);
 
   // Consultar en tiempo real las condiciones autorizadas para el cliente seleccionado (SP_ClienteCondicionPago_Consultar)
   useEffect(() => {
     if (!clienteSeleccionado?.Id_Cliente) {
       setCondicionesAutorizadasCliente([]);
       setCondicionSeleccionada(1);
+      setEstadoCreditoCliente(null);
       return;
     }
-    api.get(`/clientes/${clienteSeleccionado.Id_Cliente}/condiciones-pago`)
-      .then((res) => {
-        const activas = (res.data || []).filter((c) => c.Estado);
+    Promise.all([
+      api.get(`/clientes/${clienteSeleccionado.Id_Cliente}/condiciones-pago`),
+      api.get(`/clientes/${clienteSeleccionado.Id_Cliente}/estado-credito`),
+    ])
+      .then(([resCond, resCred]) => {
+        const activas = (resCond.data || []).filter((c) => c.Estado);
         setCondicionesAutorizadasCliente(activas);
         if (!activas.some((c) => c.Id_Condicion_Pago === condicionSeleccionada)) {
           setCondicionSeleccionada(1);
         }
+        setEstadoCreditoCliente(resCred.data || null);
       })
       .catch((err) => {
-        console.error('Error cargando condiciones del cliente en POS:', err);
+        console.error('Error cargando crédito o condiciones del cliente en POS:', err);
       });
   }, [clienteSeleccionado]);
   const [itemsCarrito, setItemsCarrito] = useState([]);
+  const [ultimoItemModificadoId, setUltimoItemModificadoId] = useState(null);
+  const [badgeKey, setBadgeKey] = useState(0);
 
   // Modales
   const [modalCobroAbierto, setModalCobroAbierto] = useState(false);
@@ -101,6 +125,7 @@ export default function PosPage({ onNavigateToFacturacion }) {
   const [mensajeTsePos, setMensajeTsePos] = useState(null);
   const [consultandoTsePos, setConsultandoTsePos] = useState(false);
   const [guardandoClientePos, setGuardandoClientePos] = useState(false);
+  const [correoClientePos, setCorreoClientePos] = useState('');
   const ultimaCedulaPos = useRef('');
 
   // Filtrado de clientes existentes en base a la búsqueda en POS
@@ -166,6 +191,10 @@ export default function PosPage({ onNavigateToFacturacion }) {
   // Registrar cliente de TSE al vuelo y asignarlo a la venta actual
   const registrarYAsignarSugerenciaPos = async () => {
     if (!sugerenciaTsePos) return;
+    if (!correoClientePos || !correoClientePos.trim() || !correoClientePos.includes('@')) {
+      showToast('Por favor ingrese el correo electrónico del cliente para enviarle sus credenciales.', 'warning');
+      return;
+    }
     setGuardandoClientePos(true);
     try {
       let nuevoId = null;
@@ -180,6 +209,7 @@ export default function PosPage({ onNavigateToFacturacion }) {
           nombre: sugerenciaTsePos.nombre,
           apellido1: sugerenciaTsePos.apellido1,
           apellido2: sugerenciaTsePos.apellido2 || undefined,
+          correo: correoClientePos.trim(),
           direccion: 'Sin asignar',
           telefono: 'Sin registrar',
         });
@@ -190,6 +220,7 @@ export default function PosPage({ onNavigateToFacturacion }) {
         const res = await api.post('/clientes/institucional', {
           cedulaJuridica: sugerenciaTsePos.cedulaJuridica,
           razonSocial: sugerenciaTsePos.razonSocial,
+          correoContacto: correoClientePos.trim(),
           direccion: 'Sin asignar',
           telefono: 'Sin registrar',
         });
@@ -233,6 +264,7 @@ export default function PosPage({ onNavigateToFacturacion }) {
       // 3. Limpiar estado de búsqueda y cerrar el modo de edición de cliente
       setSugerenciaTsePos(null);
       setMensajeTsePos(null);
+      setCorreoClientePos('');
       setBusquedaClientePos('');
       setModoCambiarCliente(false);
     } catch (err) {
@@ -299,11 +331,13 @@ export default function PosPage({ onNavigateToFacturacion }) {
   }, [productos]);
 
   // Filtrado de items para la cuadrícula
+
   const itemsFiltrados = useMemo(() => {
     const term = busqueda.toLowerCase().trim();
 
     const prods = (tipoCatalogo === 'SERVICIOS' ? [] : productos)
       .filter((p) => {
+        if (p.Estado === false || p.Estado === 0) return false;
         if (categoriaSeleccionada !== 'TODOS' && categoriaSeleccionada !== 'Servicios') {
           if (p.Categoria !== categoriaSeleccionada) return false;
         }
@@ -324,10 +358,12 @@ export default function PosPage({ onNavigateToFacturacion }) {
         stock: p.Stock_Actual,
         reorden: p.Punto_Reorden,
         disponibilidad: p.Estado_Disponibilidad,
+        porcentajeIva: p.Porcentaje_IVA != null ? Number(p.Porcentaje_IVA) : 13,
       }));
 
     const servs = (tipoCatalogo === 'PRODUCTOS' ? [] : servicios)
       .filter((s) => {
+        if (s.Estado === false || s.Estado === 0) return false;
         if (categoriaSeleccionada !== 'TODOS' && categoriaSeleccionada !== 'Servicios') {
           return false;
         }
@@ -346,6 +382,7 @@ export default function PosPage({ onNavigateToFacturacion }) {
         stock: 9999,
         reorden: 0,
         disponibilidad: 'Disponible',
+        porcentajeIva: 13,
       }));
 
     return [...prods, ...servs];
@@ -357,6 +394,11 @@ export default function PosPage({ onNavigateToFacturacion }) {
       showToast(`${item.nombre} no tiene existencias en bodega`, 'warning');
       return;
     }
+
+    const itemId = `${item.tipo}-${item.id}`;
+    setUltimoItemModificadoId(itemId);
+    setBadgeKey((prev) => prev + 1);
+    setTimeout(() => setUltimoItemModificadoId(null), 550);
 
     setItemsCarrito((prev) => {
       const index = prev.findIndex((i) => i.tipo === item.tipo && i.id === item.id);
@@ -379,6 +421,11 @@ export default function PosPage({ onNavigateToFacturacion }) {
   const modificarCantidad = (index, delta) => {
     setItemsCarrito((prev) => {
       const item = prev[index];
+      if (!item) return prev;
+      const itemId = `${item.tipo}-${item.id}`;
+      setUltimoItemModificadoId(itemId);
+      setBadgeKey((k) => k + 1);
+      setTimeout(() => setUltimoItemModificadoId(null), 550);
       const nuevaCantidad = item.cantidad + delta;
       if (nuevaCantidad <= 0) {
         return prev.filter((_, i) => i !== index);
@@ -401,12 +448,36 @@ export default function PosPage({ onNavigateToFacturacion }) {
     setItemsCarrito([]);
   };
 
-  // Cálculo financiero sincronizado con la lógica de SQL Server (IVA 13%)
-  const { subtotal, iva, total } = useMemo(() => {
-    const sub = itemsCarrito.reduce((acc, curr) => acc + curr.precio * curr.cantidad, 0);
-    const imp = Math.round(sub * 0.13 * 100) / 100;
-    const tot = Math.round((sub + imp) * 100) / 100;
-    return { subtotal: sub, iva: imp, total: tot };
+  // Cálculo financiero sincronizado con la lógica de SQL Server (IVA Diferenciado Ley 9635)
+  const { subtotal, iva13, iva2, iva, total } = useMemo(() => {
+    let sub = 0;
+    let imp13 = 0;
+    let imp2 = 0;
+
+    itemsCarrito.forEach((item) => {
+      const lineSub = item.precio * item.cantidad;
+      sub += lineSub;
+      const rate = item.porcentajeIva != null ? Number(item.porcentajeIva) : 13;
+      const lineTax = Math.round(lineSub * (rate / 100.0) * 100) / 100;
+      if (rate === 2) {
+        imp2 += lineTax;
+      } else {
+        imp13 += lineTax;
+      }
+    });
+
+    imp13 = Math.round(imp13 * 100) / 100;
+    imp2 = Math.round(imp2 * 100) / 100;
+    const totalTax = Math.round((imp13 + imp2) * 100) / 100;
+    const tot = Math.round((sub + totalTax) * 100) / 100;
+
+    return {
+      subtotal: sub,
+      iva13: imp13,
+      iva2: imp2,
+      iva: totalTax,
+      total: tot,
+    };
   }, [itemsCarrito]);
 
   // Cálculo de vuelto para efectivo
@@ -436,6 +507,34 @@ export default function PosPage({ onNavigateToFacturacion }) {
       showToast('Debe asignar un cliente a la venta antes de facturar.', 'warning');
       setModoCambiarCliente(true);
       return;
+    }
+    if (estadoCreditoCliente?.esMoroso) {
+      showToast(
+        'Venta bloqueada: El cliente presenta facturas vencidas impagas. Se restringe cualquier venta (crédito o contado).',
+        'error'
+      );
+      return;
+    }
+    if (esVentaCredito) {
+      if (estadoCreditoCliente && !estadoCreditoCliente.puedeComprarCredito) {
+        showToast(
+          'El cliente no está autorizado para crédito o ha alcanzado su límite de facturas/monto.',
+          'error'
+        );
+        return;
+      }
+      if (
+        estadoCreditoCliente &&
+        Number(estadoCreditoCliente.deudaActual || estadoCreditoCliente.saldoAdeudado || 0) + total > Number(estadoCreditoCliente.limiteCreditoMonto || 300000)
+      ) {
+        showToast(
+          `Esta venta excede el límite de crédito disponible del cliente (Tope: ₡${Number(
+            estadoCreditoCliente.limiteCreditoMonto
+          ).toLocaleString('es-CR')}).`,
+          'error'
+        );
+        return;
+      }
     }
     setMontoEntregado(total.toString());
     setReferenciaPago('');
@@ -500,15 +599,24 @@ export default function PosPage({ onNavigateToFacturacion }) {
       }
 
       // Guardar resultado para comprobante fiscal
+      const fechaActual = new Date();
+      const claveHacienda = generarClaveHacienda50({
+        idFactura: idFacturaGenerada,
+        fecha: fechaActual,
+        cedulaEmisor: '003101899540',
+        tipoComprobante: '04', // Tiquete Electrónico DGT Costa Rica
+      });
       setResultadoVenta({
         idVenta,
         idFactura: idFacturaGenerada,
         numeroFactura: `FAC-${idFacturaGenerada.toString().padStart(8, '0')}`,
+        claveHacienda,
+        qrFiscalUrl: generarQrFiscalUrl(claveHacienda),
         cliente: clienteSeleccionado.Nombre_O_RazonSocial,
         tipoCliente: clienteSeleccionado.Tipo_Cliente,
         identificacion: clienteSeleccionado.Numero_Identificacion,
         vendedor: user?.nombreUsuario || 'Cajero',
-        fecha: new Date(),
+        fecha: fechaActual,
         condicionPago: condicionesPago.find((c) => c.Id_Condicion_Pago === condicionSeleccionada)?.Nombre || (esVentaCredito ? 'Crédito' : 'Contado'),
         metodoPago: esVentaCredito
           ? `Crédito (${condicionesPago.find((c) => c.Id_Condicion_Pago === condicionSeleccionada)?.Nombre || 'Crédito'})`
@@ -537,6 +645,34 @@ export default function PosPage({ onNavigateToFacturacion }) {
       setProcesandoVenta(false);
     }
   };
+
+// Atajos de teclado profesionales para cajero (F2, F4, /, Esc)
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      const isInput = ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName);
+
+      if (e.key === 'F2') {
+        e.preventDefault();
+        if (itemsCarrito.length > 0 && !modalCobroAbierto && !resultadoVenta) {
+          iniciarCobro();
+        }
+      } else if (e.key === 'Escape') {
+        if (modalCobroAbierto) {
+          e.preventDefault();
+          setModalCobroAbierto(false);
+        } else if (resultadoVenta) {
+          e.preventDefault();
+          setResultadoVenta(null);
+        }
+      } else if (e.key === 'F4' || (e.key === '/' && !isInput)) {
+        e.preventDefault();
+        inputBusquedaRef.current?.focus();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [itemsCarrito, modalCobroAbierto, resultadoVenta]);
 
   return (
     <div className="space-y-3">
@@ -682,7 +818,7 @@ export default function PosPage({ onNavigateToFacturacion }) {
                     className={`bg-white rounded-xl border p-3.5 shadow-sm transition-all flex flex-col justify-between group ${
                       esAgotado
                         ? 'border-[#DFD5C4] opacity-60 bg-slate-50/50'
-                        : 'border-[#DFD5C4] hover:border-blue-400 hover:shadow-md cursor-pointer'
+                        : 'border-[#DFD5C4] hover:border-[#C05A3E] hover:shadow-md cursor-pointer active:scale-95 transition-all duration-100'
                     }`}
                     onClick={() => !esAgotado && agregarAlCarrito(item)}
                   >
@@ -764,7 +900,10 @@ export default function PosPage({ onNavigateToFacturacion }) {
                     Ticket de Venta Fiscal
                   </span>
                 </div>
-                <span className="text-xs bg-blue-500/20 text-[#DFD5C4] border border-[#2D5E46]/30 px-2 py-0.5 rounded-full font-semibold">
+                <span
+                  key={badgeKey}
+                  className="text-xs bg-[#2D5E46]/40 text-[#DFD5C4] border border-[#2D5E46]/60 px-2.5 py-0.5 rounded-full font-bold "
+                >
                   {itemsCarrito.reduce((acc, i) => acc + i.cantidad, 0)} items
                 </span>
               </div>
@@ -898,6 +1037,19 @@ export default function PosPage({ onNavigateToFacturacion }) {
                         <p className="text-[10px] text-slate-300 font-mono mb-2">
                           Cédula: {sugerenciaTsePos.identificacionFormateada || sugerenciaTsePos.cedulaJuridica}
                         </p>
+                        <div className="mb-2.5">
+                          <label className="block text-[10px] font-bold text-amber-200 mb-1">
+                            Correo Electrónico (Obligatorio para entrega de accesos):
+                          </label>
+                          <input
+                            type="email"
+                            value={correoClientePos}
+                            onChange={(e) => setCorreoClientePos(e.target.value)}
+                            placeholder="ejemplo@correo.com"
+                            className="w-full px-2.5 py-1.5 bg-black/40 border border-[#2D5E46] focus:border-[#C05A3E] rounded text-xs text-white placeholder-slate-400 focus:outline-none transition"
+                            required
+                          />
+                        </div>
                         <button
                           type="button"
                           onClick={registrarYAsignarSugerenciaPos}
@@ -1016,6 +1168,59 @@ export default function PosPage({ onNavigateToFacturacion }) {
                     })}
                   </select>
                 </div>
+
+                {/* ALERTA CRÍTICA: CLIENTE MOROSO BLOQUEADO */}
+                {clienteSeleccionado && estadoCreditoCliente?.esMoroso && (
+                  <div className="p-2.5 rounded-xl bg-rose-950/80 border-2 border-rose-500 text-rose-100 space-y-1 animate-pulse">
+                    <div className="flex items-center gap-1.5 font-black text-rose-300 text-xs">
+                      <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+                      <span>CLIENTE MOROSO BLOQUEADO</span>
+                    </div>
+                    <p className="text-[10.5px] text-rose-200 leading-tight">
+                      Registra <strong>{estadoCreditoCliente.facturasVencidas || 0} factura(s) vencida(s)</strong> por ₡{Number(estadoCreditoCliente.deudaActual ?? estadoCreditoCliente.saldoAdeudado ?? 0).toLocaleString('es-CR')}.
+                      Política institucional: <strong>Se bloquea tanto venta de contado como a crédito</strong> hasta su liquidación en Facturación.
+                    </p>
+                  </div>
+                )}
+
+                {/* WIDGET DE CAPACIDAD DE CRÉDITO COMERCIAL */}
+                {clienteSeleccionado && !estadoCreditoCliente?.esMoroso && esVentaCredito && estadoCreditoCliente && (
+                  <div className="p-2 rounded-xl bg-[#132B20]/90 border border-amber-500/50 text-[10.5px] space-y-1">
+                    <div className="flex items-center justify-between text-amber-300 font-bold">
+                      <span className="flex items-center gap-1">
+                        <Clock className="w-3.5 h-3.5 text-amber-400" />
+                        Capacidad de Crédito Comercial:
+                      </span>
+                      <span className={`px-1.5 py-0.2 rounded text-[9.5px] font-black ${
+                        estadoCreditoCliente.puedeComprarCredito 
+                          ? 'bg-emerald-900/80 text-emerald-300 border border-emerald-500/40' 
+                          : 'bg-rose-900/80 text-rose-300 border border-rose-500/40'
+                      }`}>
+                        {estadoCreditoCliente.puedeComprarCredito ? 'Autorizado' : 'Límite Excedido'}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-1 text-[10px] text-slate-300 pt-0.5">
+                      <div>
+                        <span className="text-slate-400 block">Facturas Activas:</span>
+                        <span className="font-semibold text-white">
+                          {(estadoCreditoCliente.facturasCreditoActivas ?? estadoCreditoCliente.facturasActivasCredito ?? 0)} / {(estadoCreditoCliente.limiteCreditoFacturas ?? estadoCreditoCliente.limiteFacturas ?? 3)}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 block">Saldo Adeudado:</span>
+                        <span className="font-semibold text-white">
+                          ₡{Number(estadoCreditoCliente.deudaActual ?? estadoCreditoCliente.saldoAdeudado ?? 0).toLocaleString('es-CR')} / ₡{Number(estadoCreditoCliente.limiteCreditoMonto ?? 300000).toLocaleString('es-CR')}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="text-[10px] text-amber-200 pt-0.5 flex justify-between border-t border-amber-500/20">
+                      <span>Crédito Disponible:</span>
+                      <span className="font-bold">
+                        ₡{Number(estadoCreditoCliente.saldoCreditoDisponible ?? estadoCreditoCliente.creditoDisponible ?? 0).toLocaleString('es-CR')}
+                      </span>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -1034,10 +1239,17 @@ export default function PosPage({ onNavigateToFacturacion }) {
               ) : (
                 itemsCarrito.map((item, index) => {
                   const subtotalLinea = item.precio * item.cantidad;
+                  const itemId = `${item.tipo}-${item.id}`;
+                  const esReciente = ultimoItemModificadoId === itemId;
+
                   return (
                     <div
-                      key={`cart-${item.tipo}-${item.id}`}
-                      className="bg-slate-50 border border-[#DFD5C4] rounded-xl p-2.5 flex items-center justify-between gap-2"
+                      key={`cart-${itemId}`}
+                      className={`animate-cart-bounce rounded-xl p-2.5 flex items-center justify-between gap-2 transition-all duration-200 ${
+                        esReciente
+                          ? 'animate-cart-flash bg-emerald-50/80 border-2 border-emerald-500 shadow-md'
+                          : 'bg-slate-50 border border-[#DFD5C4] hover:border-slate-300'
+                      }`}
                     >
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-1.5">
@@ -1050,23 +1262,38 @@ export default function PosPage({ onNavigateToFacturacion }) {
                           </span>
                           <p className="text-xs font-bold text-slate-800 truncate">{item.nombre}</p>
                         </div>
-                        <p className="text-[11px] text-[#5C3622] mt-0.5">
+                        <p className="text-[11px] text-[#5C3622] mt-0.5 font-medium flex items-center gap-1">
                           ₡{item.precio.toLocaleString('es-CR')} c/u
+                          {item.porcentajeIva === 2 ? (
+                            <span className="text-[9px] font-bold text-amber-800 bg-amber-100 border border-amber-300 px-1 rounded">
+                              IVA 2% Ley 9635
+                            </span>
+                          ) : (
+                            <span className="text-[9px] text-slate-400">
+                              (IVA 13%)
+                            </span>
+                          )}
                         </p>
                       </div>
 
-                      {/* Controles de Cantidad */}
-                      <div className="flex items-center gap-1.5 bg-white border border-[#DFD5C4] rounded-lg p-0.5">
+                      {/* Controles de Cantidad con Feedback */}
+                      <div className="flex items-center gap-1.5 bg-white border border-[#DFD5C4] rounded-lg p-0.5 shadow-xs">
                         <button
+                          type="button"
                           onClick={() => modificarCantidad(index, -1)}
-                          className="w-6 h-6 flex items-center justify-center text-[#5C3622] hover:bg-slate-100 rounded"
+                          className="w-6 h-6 flex items-center justify-center text-[#5C3622] hover:bg-slate-100 active:scale-90 rounded transition"
                         >
                           <Minus className="w-3 h-3" />
                         </button>
-                        <span className="w-6 text-center text-xs font-bold text-slate-800">{item.cantidad}</span>
+                        <span className={`w-6 text-center text-xs font-bold transition-all duration-200 ${
+                          esReciente ? 'text-emerald-700 font-black' : 'text-slate-800'
+                        }`}>
+                          {item.cantidad}
+                        </span>
                         <button
+                          type="button"
                           onClick={() => modificarCantidad(index, 1)}
-                          className="w-6 h-6 flex items-center justify-center text-[#5C3622] hover:bg-slate-100 rounded"
+                          className="w-6 h-6 flex items-center justify-center text-[#5C3622] hover:bg-slate-100 active:scale-90 rounded transition"
                         >
                           <Plus className="w-3 h-3" />
                         </button>
@@ -1081,8 +1308,9 @@ export default function PosPage({ onNavigateToFacturacion }) {
 
                       {/* Botón Eliminar */}
                       <button
+                        type="button"
                         onClick={() => eliminarItem(index)}
-                        className="p-1 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded transition"
+                        className="p-1 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded transition active:scale-90"
                         title="Quitar del ticket"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
@@ -1100,12 +1328,20 @@ export default function PosPage({ onNavigateToFacturacion }) {
                   <span>Subtotal:</span>
                   <span className="font-medium">₡{subtotal.toLocaleString('es-CR')}</span>
                 </div>
+                {iva2 > 0 && (
+                  <div className="flex justify-between text-amber-800 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
+                    <span className="flex items-center gap-1 font-semibold">
+                      IVA Reducido 2% (Libros - Ley 9635):
+                    </span>
+                    <span className="font-bold">₡{iva2.toLocaleString('es-CR')}</span>
+                  </div>
+                )}
                 <div className="flex justify-between text-slate-600">
                   <span className="flex items-center gap-1">
-                    IVA (13% Costa Rica):
+                    IVA General (13%):
                     <span className="text-[10px] text-slate-400">(FN_CalcularImpuesto)</span>
                   </span>
-                  <span className="font-medium">₡{iva.toLocaleString('es-CR')}</span>
+                  <span className="font-medium">₡{iva13.toLocaleString('es-CR')}</span>
                 </div>
                 <div className="flex justify-between text-base font-extrabold text-[#132B20] pt-2 border-t border-[#DFD5C4]">
                   <span>Monto Total:</span>
@@ -1129,11 +1365,16 @@ export default function PosPage({ onNavigateToFacturacion }) {
                 <button
                   type="button"
                   onClick={iniciarCobro}
-                  disabled={itemsCarrito.length === 0}
-                  className="flex-1 flex items-center justify-center gap-2 py-3 px-4 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold text-sm rounded-xl shadow-md shadow-emerald-600/20 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled={itemsCarrito.length === 0 || estadoCreditoCliente?.esMoroso}
+                  className={`flex-1 flex items-center justify-center gap-2 py-3 px-4 text-white font-bold text-sm rounded-xl shadow-md transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed ${
+                    estadoCreditoCliente?.esMoroso
+                      ? 'bg-rose-700 hover:bg-rose-800 shadow-rose-700/20'
+                      : 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 shadow-emerald-600/20'
+                  }`}
                 >
                   <DollarSign className="w-4 h-4" />
-                  <span>Cobrar & Facturar</span>
+                  <span>{estadoCreditoCliente?.esMoroso ? '⛔ Bloqueado por Morosidad' : 'Cobrar & Facturar'}</span>
+                  <span className="hidden sm:inline-block text-[9.5px] bg-black/20 px-1.5 py-0.5 rounded font-mono border border-white/20">F2</span>
                 </button>
               </div>
             </div>
@@ -1181,9 +1422,15 @@ export default function PosPage({ onNavigateToFacturacion }) {
                 <span className="text-3xl font-black text-emerald-900 mt-1 block">
                   ₡{total.toLocaleString('es-CR')}
                 </span>
-                <span className="text-[11px] text-emerald-600 font-medium mt-1 block">
-                  Subtotal: ₡{subtotal.toLocaleString('es-CR')} • IVA 13%: ₡{iva.toLocaleString('es-CR')}
-                </span>
+                <div className="text-[11px] text-emerald-700 font-medium mt-1 space-y-0.5">
+                  <p>Subtotal Neto: ₡{subtotal.toLocaleString('es-CR')}</p>
+                  {iva2 > 0 && (
+                    <p className="font-bold text-amber-800">
+                      IVA Reducido 2% (Libros - Ley 9635): ₡{iva2.toLocaleString('es-CR')}
+                    </p>
+                  )}
+                  <p>IVA General 13%: ₡{iva13.toLocaleString('es-CR')} • Impuestos Totales: ₡{iva.toLocaleString('es-CR')}</p>
+                </div>
               </div>
 
               {/* Si es venta a crédito, no se cobra dinero hoy en caja */}
@@ -1385,46 +1632,73 @@ export default function PosPage({ onNavigateToFacturacion }) {
             </div>
 
             {/* Formato Ticket Fiscal (Imprimible Limpio) */}
-            <div id="ticket-fiscal-imprimible" className="p-6 space-y-4 font-mono text-xs text-slate-700 bg-slate-50 border-b border-[#DFD5C4]">
-              <div className="text-center space-y-0.5 border-b border-dashed border-slate-300 pb-3">
-                <p className="font-bold text-sm text-[#132B20]">LIBRERÍA Y PAPELERÍA MUNDO ESCOLAR</p>
-                <p className="text-[11px] text-[#5C3622]">Cédula Jurídica: 3-101-998877</p>
-                <p className="text-[11px] text-[#5C3622]">Liberia, Guanacaste, CR • Tel: 2666-0000</p>
-                <p className="text-[10px] text-blue-700 font-bold mt-1">
-                  RESOLUCIÓN DGT-R-48-2016 TRIBUTACIÓN DIRECTA
+            <div id="ticket-fiscal-imprimible" className="p-5 space-y-3 font-mono text-xs text-slate-700 bg-slate-50 border-b border-[#DFD5C4]">
+              {/* Encabezado Fiscal Oficial Costa Rica */}
+              <div className="text-center space-y-1 border-b border-dashed border-slate-300 pb-3">
+                <p className="font-black text-sm text-[#132B20] tracking-wide">LIBRERÍA Y PAPELERÍA MUNDO ESCOLAR S.A.</p>
+                <p className="text-[11px] text-slate-600 font-semibold">Cédula Jurídica: 3-101-899540</p>
+                <p className="text-[10.5px] text-slate-500">Liberia, Guanacaste, Costa Rica &bull; Tel: +(506) 2666-0000</p>
+                <div className="inline-block bg-emerald-50 text-emerald-800 border border-emerald-300 px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider mt-1">
+                  TIQUETE ELECTRÓNICO OFICIAL &bull; DGT COSTA RICA
+                </div>
+                <p className="text-[9px] text-slate-400">
+                  Resolución DGT-R-033-2019 / DGT-R-48-2016
                 </p>
               </div>
 
+              {/* Clave Numérica de 50 Dígitos */}
+              <div className="bg-white border border-slate-200 p-2.5 rounded-xl shadow-xs space-y-1">
+                <div className="flex items-center justify-between text-[9.5px] text-slate-600 font-bold">
+                  <span>CLAVE NUMÉRICA TRIBUTARIA (50 DÍGITOS):</span>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => copiarClaveHacienda(resultadoVenta.claveHacienda)}
+                      className="inline-flex items-center gap-1 text-[8.5px] font-bold text-[#C05A3E] hover:text-[#AA4C33] bg-[#FAF7F0] border border-[#DFD5C4] px-1.5 py-0.5 rounded transition shadow-xs cursor-pointer active:scale-95"
+                      title="Copiar clave numérica completa de 50 dígitos"
+                    >
+                      {claveCopiada ? <Check className="w-2.5 h-2.5 text-emerald-600" /> : <Copy className="w-2.5 h-2.5" />}
+                      <span>{claveCopiada ? '¡Copiado!' : 'Copiar'}</span>
+                    </button>
+                    <span className="text-[8.5px] text-emerald-700 bg-emerald-100 font-bold px-1.5 py-0.2 rounded">DGT-CR</span>
+                  </div>
+                </div>
+                <p className="font-mono text-[9px] text-slate-900 leading-tight break-all font-semibold select-all bg-slate-50 p-1.5 rounded border border-slate-200">
+                  {formatearClaveHacienda(resultadoVenta.claveHacienda)}
+                </p>
+              </div>
+
+              {/* Metadatos de la Venta */}
               <div className="space-y-1 text-[11px]">
                 <div className="flex justify-between">
-                  <span className="text-[#5C3622]">Factura:</span>
+                  <span className="text-slate-500">Comprobante Fiscal:</span>
                   <span className="font-bold text-[#132B20]">{resultadoVenta.numeroFactura}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-[#5C3622]">Orden Venta:</span>
+                  <span className="text-slate-500">Orden de Venta:</span>
                   <span>#{resultadoVenta.idVenta}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-[#5C3622]">Fecha:</span>
-                  <span>{resultadoVenta.fecha.toLocaleString('es-CR')}</span>
+                  <span className="text-slate-500">Fecha y Hora:</span>
+                  <span>{new Date(resultadoVenta.fecha).toLocaleString('es-CR')}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-[#5C3622]">Cliente:</span>
-                  <span className="font-bold text-[#132B20] truncate max-w-[180px]">
+                  <span className="text-slate-500">Cliente / Razón Social:</span>
+                  <span className="font-bold text-[#132B20] truncate max-w-[190px]">
                     {resultadoVenta.cliente}
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-[#5C3622]">Identificación:</span>
-                  <span>{resultadoVenta.identificacion}</span>
+                  <span className="text-slate-500">Identificación:</span>
+                  <span>{resultadoVenta.identificacion || 'Consumidor Final'}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-[#5C3622]">Cajero:</span>
+                  <span className="text-slate-500">Cajero Autorizado:</span>
                   <span>{resultadoVenta.vendedor}</span>
                 </div>
               </div>
 
-              {/* Líneas de detalle */}
+              {/* Líneas de Detalle */}
               <div className="border-t border-b border-dashed border-slate-300 py-2 space-y-1">
                 {resultadoVenta.items.map((it, idx) => (
                   <div key={idx} className="flex justify-between text-[11px]">
@@ -1436,19 +1710,25 @@ export default function PosPage({ onNavigateToFacturacion }) {
                 ))}
               </div>
 
-              {/* Totales */}
+              {/* Totales e Impuestos */}
               <div className="space-y-1 text-[11px]">
                 <div className="flex justify-between">
-                  <span>Subtotal:</span>
+                  <span>Subtotal Neto:</span>
                   <span>₡{resultadoVenta.subtotal.toLocaleString('es-CR')}</span>
                 </div>
+                {resultadoVenta.iva2 > 0 && (
+                  <div className="flex justify-between font-bold text-amber-900">
+                    <span>IVA 2% (Libros - Ley 9635):</span>
+                    <span>₡{resultadoVenta.iva2.toLocaleString('es-CR')}</span>
+                  </div>
+                )}
                 <div className="flex justify-between">
-                  <span>IVA 13%:</span>
-                  <span>₡{resultadoVenta.iva.toLocaleString('es-CR')}</span>
+                  <span>IVA 13% (General Costa Rica):</span>
+                  <span>₡{(resultadoVenta.iva13 ?? resultadoVenta.iva).toLocaleString('es-CR')}</span>
                 </div>
-                <div className="flex justify-between text-xs font-black text-[#132B20] pt-1 border-t border-slate-300">
+                <div className="flex justify-between text-xs font-black text-[#132B20] pt-1.5 border-t border-slate-300">
                   <span>TOTAL A PAGAR:</span>
-                  <span>₡{resultadoVenta.total.toLocaleString('es-CR')}</span>
+                  <span className="text-emerald-700 text-sm">₡{resultadoVenta.total.toLocaleString('es-CR')}</span>
                 </div>
                 <div className="flex justify-between text-slate-600 pt-1">
                   <span>Método de Pago:</span>
@@ -1457,7 +1737,7 @@ export default function PosPage({ onNavigateToFacturacion }) {
                 {resultadoVenta.metodoPago === 'Efectivo' && (
                   <>
                     <div className="flex justify-between text-slate-600">
-                      <span>Entregado:</span>
+                      <span>Monto Entregado:</span>
                       <span>₡{resultadoVenta.montoEntregado.toLocaleString('es-CR')}</span>
                     </div>
                     <div className="flex justify-between font-bold text-emerald-800">
@@ -1468,9 +1748,22 @@ export default function PosPage({ onNavigateToFacturacion }) {
                 )}
               </div>
 
-              <div className="text-center pt-2.5 border-t border-dashed border-slate-300 text-[10px] text-slate-500 space-y-0.5">
-                <p className="font-semibold text-slate-700">¡Gracias por su compra en Mundo Escolar!</p>
-                <p>Factura física autorizada según resolución DGT-R-48-2016</p>
+              {/* Sección Código QR Fiscal Interactivo */}
+              <div className="flex items-center justify-center gap-3 pt-3 border-t border-dashed border-slate-300">
+                <QrFiscal value={resultadoVenta.qrFiscalUrl} size={90} />
+                <div className="text-left space-y-1 text-[10px] text-slate-500 max-w-[170px]">
+                  <p className="font-bold text-slate-800">Verificación Oficial:</p>
+                  <p className="leading-tight text-[9px]">
+                    Escanee el código QR para validar este comprobante en la Oficina Virtual (ATV) del Ministerio de Hacienda.
+                  </p>
+                  <p className="text-[8.5px] text-emerald-700 font-bold">
+                    Emisión Electrónica Homologada
+                  </p>
+                </div>
+              </div>
+
+              <div className="text-center pt-2 text-[9.5px] text-slate-400">
+                ¡Gracias por su compra en Mundo Escolar! &bull; Documento Electrónico Tributario
               </div>
             </div>
 
@@ -1483,6 +1776,19 @@ export default function PosPage({ onNavigateToFacturacion }) {
                 title="Cerrar comprobante sin forzar nueva venta"
               >
                 Cerrar
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const msj = generarMensajeWhatsAppFactura(resultadoVenta);
+                  window.open(`https://wa.me/?text=${msj}`, '_blank');
+                }}
+                className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-white bg-[#25D366] hover:bg-[#20ba5a] rounded-xl shadow-sm transition active:scale-95"
+                title="Enviar comprobante electrónico al WhatsApp del cliente"
+              >
+                <Smartphone className="w-4 h-4" />
+                <span>WhatsApp</span>
               </button>
 
               <button
