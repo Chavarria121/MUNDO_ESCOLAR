@@ -186,11 +186,11 @@ DECLARE @IdTipoCliInst INT = (SELECT Id_Tipo_Cliente FROM Tipo_Cliente WHERE Nom
 IF NOT EXISTS (SELECT 1 FROM Cliente_Particular WHERE Identificacion = '1-1122-0334')
 BEGIN
     INSERT INTO Cliente (Id_Tipo_Cliente, Id_Usuario, Telefono, Direccion, Estado)
-    VALUES (@IdTipoCliPart, @IdUserMaria, '8811-2233', 'San José, Guadalupe, 200m norte de la iglesia', 1);
+    VALUES (@IdTipoCliPart, @IdUserMaria, '8811-2233', N'San José, Guadalupe, 200m norte de la iglesia', 1);
     
     DECLARE @IdCli1 INT = SCOPE_IDENTITY();
     INSERT INTO Cliente_Particular (Id_Cliente, Identificacion, Nombre, Apellido1, Apellido2)
-    VALUES (@IdCli1, '1-1122-0334', 'María', 'Rodríguez', 'Pérez');
+    VALUES (@IdCli1, '1-1122-0334', N'María', N'Rodríguez', N'Pérez');
 END
 
 -- Cliente Particular 2: Esteban Solís Brenes
@@ -201,14 +201,14 @@ BEGIN
     
     DECLARE @IdCli2 INT = SCOPE_IDENTITY();
     INSERT INTO Cliente_Particular (Id_Cliente, Identificacion, Nombre, Apellido1, Apellido2)
-    VALUES (@IdCli2, '2-0544-0789', 'Esteban', 'Solís', 'Brenes');
+    VALUES (@IdCli2, '2-0544-0789', N'Esteban', N'Solís', N'Brenes');
 END
 
 -- Cliente Institucional 1: Escuela República de Colombia
 IF NOT EXISTS (SELECT 1 FROM Cliente_Institucional WHERE Cedula_Juridica = '3-008-045612')
 BEGIN
     INSERT INTO Cliente (Id_Tipo_Cliente, Id_Usuario, Telefono, Direccion, Estado)
-    VALUES (@IdTipoCliInst, @IdUserRepCol, '2225-7890', 'San José, Barrio México', 1);
+    VALUES (@IdTipoCliInst, @IdUserRepCol, '2225-7890', N'San José, Barrio México', 1);
     
     DECLARE @IdCliInst1 INT = SCOPE_IDENTITY();
     INSERT INTO Cliente_Institucional (Id_Cliente, Razon_Social, Cedula_Juridica, Nombre_Contacto, Telefono_Contacto, Correo_Contacto)
