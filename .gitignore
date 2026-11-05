@@ -15,3 +15,5 @@ frontend/dist/
 
 # Scratch & Temporary
 scratch/
+.vs/
+*.vs/
