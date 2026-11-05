@@ -1,4 +1,4 @@
-@echo off
+﻿@echo off
 chcp 65001 > nul
 cls
 echo =========================================================================
@@ -7,8 +7,16 @@ echo    REQUISITO DE PRUEBA: PROFESOR TORRENTES (SSMS 22)
 echo =========================================================================
 echo.
 echo ADVERTENCIA: Este proceso recreará la base de datos MUNDO_ESCOLAR desde cero.
-echo Si desea cancelar, presione Ctrl+C. De lo contrario:
-pause
+echo Si ya existe y desea sobrescribirla, escriba S. De lo contrario, presione N para cancelar.
+set /p CONFIRM="¿Desea continuar con la reinstalación desde cero? (S/N): "
+if /i "%CONFIRM%" neq "S" (
+    echo Operación cancelada. No se modificó la base de datos existente.
+    pause
+    exit /b 0
+)
+
+REM Si confirmó S, se purga de forma controlada antes del despliegue:
+sqlcmd -S localhost -E -Q "IF EXISTS (SELECT name FROM sys.databases WHERE name = 'MUNDO_ESCOLAR') BEGIN ALTER DATABASE MUNDO_ESCOLAR SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE MUNDO_ESCOLAR; END"
 
 echo.
 echo [1/17] Creando Base de Datos y Filegroups...
