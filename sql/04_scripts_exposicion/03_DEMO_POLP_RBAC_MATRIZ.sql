@@ -1,9 +1,5 @@
 /* =========================================================================
    PROYECTO: LIBRERÍA Y PAPELERÍA MUNDO ESCOLAR
-   EXPOSICIÓN FINAL 2026 - PESTAÑA 3 EN SSMS (MAURICIO CHAVARRÍA)
-   SCRIPT: 03_DEMO_POLP_RBAC_MATRIZ.sql
-   MOMENTO DE EJECUCIÓN: Bloque de Seguridad y Demostración en Vivo de PoLP.
-   INSTRUCCIÓN: Ejecutar por bloques según la explicación verbal.
    ========================================================================= */
 
 USE MUNDO_ESCOLAR;

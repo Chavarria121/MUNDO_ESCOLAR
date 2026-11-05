@@ -1,10 +1,5 @@
 /* =========================================================================
    PROYECTO: LIBRERÍA Y PAPELERÍA MUNDO ESCOLAR
-   ARCHIVO: 00_CONSULTAS_VERIFICACION_EN_VIVO.sql
-   PROPÓSITO: SCRIPT MAESTRO CONSOLIDADO DE CONSULTAS (SELECT) PARA LA DEFENSA ANTE EL PROF. TORRENTES
-   INSTRUCCIÓN: Tener este script abierto en SSMS 22.
-                Al realizar una acción en el Frontend, sombrear el bloque correspondiente 
-                y presionar F5 para mostrar los cambios físicos en tiempo real.
    ========================================================================= */
 
 USE MUNDO_ESCOLAR;

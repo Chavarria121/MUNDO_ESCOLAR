@@ -1,10 +1,5 @@
 /* =========================================================================
    PROYECTO: LIBRERÍA Y PAPELERÍA MUNDO ESCOLAR
-   EXPOSICIÓN FINAL 2026 - PESTAÑA 1 EN SSMS (MAURICIO CHAVARRÍA)
-   SCRIPT: 01_DEMO_LIVE_TRANSACCION_KARDEX.sql
-   MOMENTO DE EJECUCIÓN: Justo cuando Melissa confirme una Venta en el POS
-                         y Daniel confirme una Recepción en Compras.
-   INSTRUCCIÓN: Seleccionar todo y presionar [F5] para proyectar los cambios.
    ========================================================================= */
 
 USE MUNDO_ESCOLAR;

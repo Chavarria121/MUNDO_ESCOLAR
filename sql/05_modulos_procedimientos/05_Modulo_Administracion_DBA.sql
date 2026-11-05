@@ -1,9 +1,5 @@
 /* =========================================================================
    PROYECTO: LIBRERÍA Y PAPELERÍA MUNDO ESCOLAR
-   MODULO: MÓDULO 5: ADMINISTRACIÓN DE BASE DE DATOS (DBA) Y MANTENIMIENTO
-   DESCRIPCIÓN: Estrategia de Backups (FULL, DIFF, LOG), Monitoreo de Filegroups, Mantenimiento de Índices y DBCC
-   TOTAL PROCEDIMIENTOS: 11
-   USO EN EXPOSICIÓN: Pestaña temática lista para ejecución y demostración en SSMS 22.
    ========================================================================= */
 
 USE MUNDO_ESCOLAR;

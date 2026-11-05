@@ -1,9 +1,5 @@
 /* =========================================================================
    PROYECTO: LIBRERÍA Y PAPELERÍA MUNDO ESCOLAR
-   MODULO: MÓDULO 6: DATA WAREHOUSE, ETL Y REPORTES DE BUSINESS INTELLIGENCE
-   DESCRIPCIÓN: Arquitectura Kimball, SCD Tipo 2 en Clientes, Tablas de Hechos y Orquestación Analítica
-   TOTAL PROCEDIMIENTOS: 16
-   USO EN EXPOSICIÓN: Pestaña temática lista para ejecución y demostración en SSMS 22.
    ========================================================================= */
 
 USE MUNDO_ESCOLAR;

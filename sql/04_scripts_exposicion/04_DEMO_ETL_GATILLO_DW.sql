@@ -1,10 +1,5 @@
 /* =========================================================================
    PROYECTO: LIBRERÍA Y PAPELERÍA MUNDO ESCOLAR
-   EXPOSICIÓN FINAL 2026 - PESTAÑA 4 EN SSMS (MAURICIO CHAVARRÍA)
-   SCRIPT: 04_DEMO_ETL_GATILLO_DW.sql
-   MOMENTO DE EJECUCIÓN: Justo al terminar el bloque de Mauricio, para pasar
-                         la posta de la exposición a Samir (Data Warehouse & BI).
-   INSTRUCCIÓN: Seleccionar todo y presionar [F5] para disparar la carga analítica.
    ========================================================================= */
 
 USE MUNDO_ESCOLAR;

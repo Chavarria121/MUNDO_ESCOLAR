@@ -1,9 +1,5 @@
 /* =========================================================================
    PROYECTO: LIBRERÍA Y PAPELERÍA MUNDO ESCOLAR
-   MODULO: MÓDULO 3: VENTAS, FACTURACIÓN ELECTRÓNICA Y PAGOS
-   DESCRIPCIÓN: Punto de Venta (POS), Facturación Electrónica con Clave DGT 50 dígitos, Recaudación y CxC
-   TOTAL PROCEDIMIENTOS: 16
-   USO EN EXPOSICIÓN: Pestaña temática lista para ejecución y demostración en SSMS 22.
    ========================================================================= */
 
 USE MUNDO_ESCOLAR;

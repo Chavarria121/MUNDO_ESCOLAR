@@ -1,9 +1,5 @@
 /* =========================================================================
    PROYECTO: LIBRERÍA Y PAPELERÍA MUNDO ESCOLAR
-   MODULO: MÓDULO 2: PRODUCTOS, CATÁLOGO E INVENTARIO
-   DESCRIPCIÓN: Catálogo de Artículos, Categorías, Tarifas de Servicios Escolares y Libro Kárdex Inmutable
-   TOTAL PROCEDIMIENTOS: 16
-   USO EN EXPOSICIÓN: Pestaña temática lista para ejecución y demostración en SSMS 22.
    ========================================================================= */
 
 USE MUNDO_ESCOLAR;

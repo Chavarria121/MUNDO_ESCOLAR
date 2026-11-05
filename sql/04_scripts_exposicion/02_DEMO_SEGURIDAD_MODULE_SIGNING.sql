@@ -1,10 +1,5 @@
 /* =========================================================================
    PROYECTO: LIBRERÍA Y PAPELERÍA MUNDO ESCOLAR
-   EXPOSICIÓN FINAL 2026 - PESTAÑA 2 EN SSMS (MAURICIO CHAVARRÍA)
-   SCRIPT: 02_DEMO_SEGURIDAD_MODULE_SIGNING.sql
-   MOMENTO DE EJECUCIÓN: Bloque de Seguridad y Gobernanza DBA de Mauricio.
-   INSTRUCCIÓN: Seleccionar todo y presionar [F5] para demostrar la solución
-                criptográfica recomendada por Microsoft ante la auditoría.
    ========================================================================= */
 
 USE master;

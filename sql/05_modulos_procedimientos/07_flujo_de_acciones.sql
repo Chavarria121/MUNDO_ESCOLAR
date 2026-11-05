@@ -1,19 +1,5 @@
 /* =========================================================================
    PROYECTO: LIBRERÍA Y PAPELERÍA MUNDO ESCOLAR
-   ARCHIVO: 07_flujo_de_acciones.sql
-   PROPÓSITO: SCRIPT MAESTRO DE DEMOSTRACIÓN INTEGRADA EN VIVO (HILO CONDUCTOR)
-   TRIBUNAL EVALUADOR: Prof. Torrentes — Bases de Datos Avanzadas e Inteligencia de Negocios
-   EQUIPO EXPOSITOR:
-     1. DANIEL  -> Registra cliente particular y autoriza línea de crédito.
-     2. JOSE    -> Recibe orden de compra en bodega; stock aumenta y genera Kárdex.
-     3. DAUREN  -> Muestra existencias del producto, Kárdex y ajuste de inventario por merma.
-     4. MELISSA -> Vende al cliente de Daniel el producto ingresado; factura DGT 50 dígitos y abono.
-     5. GEISON  -> Muestra bitácora transversal unificada, seguridad RBAC y ejecuta respaldo DBA.
-     6. SAMIR   -> Sincroniza el Data Warehouse (ETL) y demuestra la analítica en Power BI / Métricas.
-
-   INSTRUCCIÓN PARA QUIEN MANEJA SSMS 22:
-   - Mantén abierta esta única pestaña durante toda la exposición.
-   - Conforme cada compañero toma la palabra, sombrea el bloque correspondiente y presiona F5.
    ========================================================================= */
 
 USE MUNDO_ESCOLAR;

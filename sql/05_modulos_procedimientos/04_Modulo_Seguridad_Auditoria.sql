@@ -1,9 +1,5 @@
 /* =========================================================================
    PROYECTO: LIBRERÍA Y PAPELERÍA MUNDO ESCOLAR
-   MODULO: MÓDULO 4: SEGURIDAD, CONTROL DE ACCESO Y AUDITORÍA TRANSVERSAL
-   DESCRIPCIÓN: Autenticación con Hash/Sal, RBAC con PoLP, Revocación de JWT, Historial NIST y Bitácora Transversal
-   TOTAL PROCEDIMIENTOS: 25
-   USO EN EXPOSICIÓN: Pestaña temática lista para ejecución y demostración en SSMS 22.
    ========================================================================= */
 
 USE MUNDO_ESCOLAR;

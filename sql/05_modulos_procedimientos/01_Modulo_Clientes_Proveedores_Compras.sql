@@ -1,9 +1,5 @@
 /* =========================================================================
    PROYECTO: LIBRERÍA Y PAPELERÍA MUNDO ESCOLAR
-   MODULO: MÓDULO 1: CLIENTES, PROVEEDORES Y COMPRAS
-   DESCRIPCIÓN: Gestión de Clientes, Capacidad Crediticia, Proveedores y Adquisiciones / Smart Procurement
-   TOTAL PROCEDIMIENTOS: 26
-   USO EN EXPOSICIÓN: Pestaña temática lista para ejecución y demostración en SSMS 22.
    ========================================================================= */
 
 USE MUNDO_ESCOLAR;
