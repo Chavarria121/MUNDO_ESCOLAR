@@ -1277,3 +1277,126 @@ BEGIN
     ORDER BY prv.Nombre_O_RazonSocial, p.Nombre;
 END;
 GO
+
+/* =========================================================================
+   GUÍA PRÁCTICA DE EXPOSICIÓN EN VIVO: CONSULTAS ANTES Y DESPUÉS
+   MODULO 1: CLIENTES, PROVEEDORES Y COMPRAS
+   INSTRUCCIONES PARA EL EXPOSITOR (SSMS 22):
+   - Selecciona con el mouse el bloque de consulta indicado y presiona F5.
+   - Sigue los pasos numerados coordinando con tu compañero en el Frontend.
+   ========================================================================= */
+
+-- -------------------------------------------------------------------------
+-- CASO 1: RECEPCIÓN DE ORDEN DE COMPRA E INGRESO A BODEGA (SP_Compra_Confirmar)
+-- -------------------------------------------------------------------------
+-- PASO 1 (ANTES): Ejecuta esta consulta para ver la orden en estado PENDIENTE (Id_Estado_Compra: 1)
+-- y el stock físico actual de los productos antes de que llegue la mercadería.
+SELECT 
+    c.Id_Compra,
+    CONCAT('OC-', RIGHT('00000000' + CAST(c.Id_Compra AS VARCHAR(10)), 8)) AS Numero_Orden,
+    prv.Nombre_O_RazonSocial AS Proveedor,
+    ec.Nombre_Estado AS Estado_Compra,
+    c.Fecha_Compra,
+    u.Nombre_Usuario AS Responsable,
+    tot.TotalCompra AS Monto_Total,
+    tot.TotalArticulos AS Total_Articulos
+FROM dbo.Compra c
+INNER JOIN dbo.Estado_Compra ec ON c.Id_Estado_Compra = ec.Id_Estado_Compra
+INNER JOIN dbo.VW_ProveedoresActivos prv ON c.Id_Proveedor = prv.Id_Proveedor
+INNER JOIN dbo.Usuario u ON c.Id_Usuario = u.Id_Usuario
+OUTER APPLY (
+    SELECT SUM(Subtotal) AS TotalCompra, SUM(Cantidad) AS TotalArticulos 
+    FROM dbo.Compra_Producto WHERE Id_Compra = c.Id_Compra
+) tot
+WHERE c.Id_Estado_Compra = 1 -- Órdenes pendientes de recepción
+ORDER BY c.Id_Compra DESC;
+
+-- PASO 2 (ACCIÓN DEL COMPAÑERO EN EL FRONTEND):
+-- El compañero va a la pantalla Compras (/compras), ubica la orden pendiente y hace clic
+-- en el botón "Confirmar Ingreso a Bodega" seleccionando la fecha de recepción.
+
+-- PASO 3 (DESPUÉS): Ejecuta esta consulta para demostrar a Torrentes que:
+-- 1. La orden cambió a Estado: 'Recibida' (Id_Estado_Compra: 2).
+-- 2. El stock físico aumentó en dbo.Producto.
+-- 3. Se generó el asiento inmutable en VW_MovimientosInventario (Kárdex).
+SELECT TOP 1 
+    c.Id_Compra,
+    CONCAT('OC-', RIGHT('00000000' + CAST(c.Id_Compra AS VARCHAR(10)), 8)) AS Numero_Orden,
+    prv.Nombre_O_RazonSocial AS Proveedor,
+    ec.Nombre_Estado AS Estado_Compra,
+    c.Fecha_Compra,
+    u.Nombre_Usuario AS Responsable,
+    tot.TotalCompra AS Monto_Total
+FROM dbo.Compra c
+INNER JOIN dbo.Estado_Compra ec ON c.Id_Estado_Compra = ec.Id_Estado_Compra
+INNER JOIN dbo.VW_ProveedoresActivos prv ON c.Id_Proveedor = prv.Id_Proveedor
+INNER JOIN dbo.Usuario u ON c.Id_Usuario = u.Id_Usuario
+OUTER APPLY (
+    SELECT SUM(Subtotal) AS TotalCompra FROM dbo.Compra_Producto WHERE Id_Compra = c.Id_Compra
+) tot
+ORDER BY c.Id_Compra DESC;
+
+-- Asientos en Kárdex generados automáticamente por la confirmación de compra:
+SELECT TOP 3 
+    m.Id_Movimiento_Inventario,
+    m.Fecha,
+    m.Producto,
+    m.Tipo_Movimiento,
+    m.Cantidad,
+    m.Motivo,
+    m.Responsable
+FROM dbo.VW_MovimientosInventario m
+WHERE m.Naturaleza = 'Entrada'
+ORDER BY m.Id_Movimiento_Inventario DESC;
+
+-- Registro en la Bitácora de Auditoría Transversal:
+SELECT TOP 1 
+    b.Id_Bitacora, b.Fecha_Hora, ISNULL(u.Nombre_Usuario, 'Sistema') AS Usuario, 
+    b.Accion, b.Tabla_Afectada, b.Id_Registro_Afectado, b.Descripcion
+FROM dbo.Bitacora b
+LEFT JOIN dbo.Usuario u ON b.Id_Usuario = u.Id_Usuario
+WHERE b.Tabla_Afectada = 'Compra'
+ORDER BY b.Id_Bitacora DESC;
+GO
+
+
+-- -------------------------------------------------------------------------
+-- CASO 2: ASISTENTE DE REABASTECIMIENTO INTELIGENTE (Smart Procurement)
+-- -------------------------------------------------------------------------
+-- PASO 1 (DEMOSTRACIÓN DEL SP 92): Ejecuta el procedimiento almacenado en vivo.
+-- Demuestra el algoritmo que detecta quiebres de stock (Stock <= Punto_Reorden),
+-- calcula la cantidad óptima ((Punto_Reorden * 2) - Stock_Actual) y vincula
+-- automáticamente el costo de compra y el proveedor homologado principal.
+EXEC dbo.SP_ObtenerSugerenciasReabastecimiento;
+
+-- PASO 2 (ACCIÓN DEL COMPAÑERO EN EL FRONTEND):
+-- El compañero muestra en pantalla el banner naranja de "Smart Procurement" en /compras,
+-- donde aparece la sugerencia para el Cuaderno Escolar con su costo estimado y el botón
+-- "Ver Sugerencias • Emitir en 1 Clic".
+GO
+
+
+-- -------------------------------------------------------------------------
+-- CASO 3: AUTORIZACIÓN Y CONTROL DE LÍNEA DE CRÉDITO A CLIENTE INSTITUCIONAL
+-- -------------------------------------------------------------------------
+-- PASO 1 (ANTES): Consulta el límite de crédito actual y las condiciones del cliente #1
+SELECT 
+    c.Id_Cliente,
+    c.Nombre_O_RazonSocial AS Cliente,
+    c.Tipo_Cliente,
+    c.Limite_Credito_Monto,
+    c.Limite_Credito_Facturas,
+    c.Permite_Credito,
+    cp.Nombre AS Condicion_Pago,
+    cp.Dias_Credito,
+    ccp.Estado AS Condicion_Activa
+FROM dbo.VW_ClientesActivos c
+LEFT JOIN dbo.Cliente_Condicion_Pago ccp ON c.Id_Cliente = ccp.Id_Cliente AND ccp.Estado = 1
+LEFT JOIN dbo.Condicion_Pago cp ON ccp.Id_Condicion_Pago = cp.Id_Condicion_Pago
+WHERE c.Id_Cliente = 1;
+
+-- PASO 2 (ACCIÓN DEL COMPAÑERO EN EL FRONTEND):
+-- En /clientes, el compañero edita el cliente #1 y le ajusta el límite de crédito o condición.
+
+-- PASO 3 (DESPUÉS): Vuelve a ejecutar la consulta del PASO 1 para ver el nuevo límite aplicado en caliente.
+GO

@@ -649,3 +649,78 @@ BEGIN
     END CATCH
 END;
 GO
+
+/* =========================================================================
+   GUÍA PRÁCTICA DE EXPOSICIÓN EN VIVO: CONSULTAS ANTES Y DESPUÉS
+   MODULO 6: DATA WAREHOUSE, ETL Y REPORTES ANALÍTICOS (BI)
+   INSTRUCCIONES PARA EL EXPOSITOR (SSMS 22):
+   - Selecciona con el mouse el bloque de consulta indicado y presiona F5.
+   ========================================================================= */
+
+-- -------------------------------------------------------------------------
+-- CASO 1: DEMOSTRACIÓN DE SCD TIPO 2 EN DIMCLIENTE (SP_ETL_CargarDimCliente)
+-- -------------------------------------------------------------------------
+-- PASO 1 (ANTES): Consulta la versión actual del cliente #1 en la dimensión analítica
+SELECT 
+    Sk_Cliente,
+    Id_Cliente,
+    Nombre_Completo,
+    Estado_Operacional,
+    Fecha_Inicio,
+    Fecha_Fin,
+    Es_Actual
+FROM dw.DimCliente
+WHERE Id_Cliente = 1;
+
+-- PASO 2 (ACCIÓN DEL COMPAÑERO EN EL FRONTEND):
+-- El compañero va a /clientes y modifica datos del cliente #1 en la aplicación web.
+
+-- PASO 3 (EJECUCIÓN DEL ETL DE LA DIMENSIÓN):
+EXEC dbo.SP_ETL_CargarDimCliente;
+
+-- PASO 4 (DESPUÉS): Vuelve a consultar DimCliente.
+-- Demuestra a Torrentes la implementación rigurosa de Kimball SCD Tipo 2:
+-- La versión anterior se cerró con Fecha_Fin y Es_Actual = 0.
+-- Se insertó una nueva fila con los nuevos datos y Es_Actual = 1.
+SELECT 
+    Sk_Cliente,
+    Id_Cliente,
+    Nombre_Completo,
+    Estado_Operacional,
+    Fecha_Inicio,
+    Fecha_Fin,
+    Es_Actual
+FROM dw.DimCliente
+WHERE Id_Cliente = 1
+ORDER BY Sk_Cliente;
+GO
+
+
+-- -------------------------------------------------------------------------
+-- CASO 2: ORQUESTACIÓN COMPLETA DEL PIPELINE ANALÍTICO (SP_ETL_OrquestarCargaCompleta)
+-- -------------------------------------------------------------------------
+-- Dispara en orden secuencial de dependencia las 8 dimensiones y las 6 tablas de hechos.
+-- Observa en la pestaña "Mensajes" de SSMS el registro de tiempos y filas procesadas.
+EXEC dbo.SP_ETL_OrquestarCargaCompleta;
+GO
+
+
+-- -------------------------------------------------------------------------
+-- CASO 3: CONCILIACIÓN MATEMÁTICA Y AUDITORÍA DE DATOS (OLTP vs DW)
+-- -------------------------------------------------------------------------
+-- Certifica ante el tribunal evaluador que no hay discrepancias numéricas entre
+-- el sistema transaccional (dbo.Venta) y el repositorio analítico (dw.FactVentas).
+EXEC dbo.SP_ETL_ValidarConciliacionCargas;
+
+-- Consulta de los hechos consolidados cargados en FactVentas:
+SELECT TOP 5 
+    Id_Venta,
+    Sk_Fecha,
+    Sk_Cliente,
+    Sk_Vendedor,
+    Subtotal,
+    Impuesto,
+    Monto_Total
+FROM dw.FactVentas
+ORDER BY Id_Venta DESC;
+GO

@@ -578,3 +578,81 @@ BEGIN
     ORDER BY b.Fecha_Hora DESC;
 END;
 GO
+
+/* =========================================================================
+   GUÍA PRÁCTICA DE EXPOSICIÓN EN VIVO: CONSULTAS ANTES Y DESPUÉS
+   MODULO 4: SEGURIDAD, CONTROL DE ACCESO Y AUDITORÍA TRANSVERSAL
+   INSTRUCCIONES PARA EL EXPOSITOR (SSMS 22):
+   - Selecciona con el mouse el bloque de consulta indicado y presiona F5.
+   - Sigue los pasos numerados coordinando con tu compañero en el Frontend.
+   ========================================================================= */
+
+-- -------------------------------------------------------------------------
+-- CASO 1: REVOCACIÓN CRIPTOGRÁFICA DE TOKENS JWT EN LOGOUT (SP_Token_Revocar)
+-- -------------------------------------------------------------------------
+-- PASO 1 (ANTES): Consulta los tokens revocados en la lista negra técnica
+SELECT TOP 3 
+    Id_Token,
+    Token_Hash,
+    Fecha_Revocacion,
+    Fecha_Expiracion
+FROM dbo.TB_Token_Revocado
+ORDER BY Id_Token DESC;
+
+-- PASO 2 (ACCIÓN DEL COMPAÑERO EN EL FRONTEND):
+-- En la barra superior de la aplicación, el compañero hace clic en "Cerrar Sesión" (Logout).
+
+-- PASO 3 (DESPUÉS): Vuelve a ejecutar la consulta del PASO 1.
+-- Se demuestra a Torrentes que el token JWT revocado fue persistido
+-- inmediatamente en la base de datos, impidiendo que pueda reutilizarse.
+SELECT TOP 3 
+    Id_Token,
+    Token_Hash,
+    Fecha_Revocacion,
+    Fecha_Expiracion
+FROM dbo.TB_Token_Revocado
+ORDER BY Id_Token DESC;
+GO
+
+
+-- -------------------------------------------------------------------------
+-- CASO 2: CAMBIO DE CONTRASEÑA Y PREVENCIÓN DE REÚSO NIST (SP_Usuario_CambiarContrasena)
+-- -------------------------------------------------------------------------
+-- PASO 1 (ANTES): Consulta el historial de contraseñas para el usuario 'admin'
+SELECT TOP 3 
+    h.Id_Historial,
+    u.Nombre_Usuario,
+    h.Contrasena_Hash,
+    h.Fecha_Modificacion
+FROM dbo.TB_Historial_Contrasenas h
+INNER JOIN dbo.Usuario u ON h.Id_Usuario = u.Id_Usuario
+WHERE u.Nombre_Usuario = 'admin'
+ORDER BY h.Id_Historial DESC;
+
+-- PASO 2 (ACCIÓN DEL COMPAÑERO EN EL FRONTEND):
+-- El compañero va a /perfil y realiza un cambio de contraseña.
+
+-- PASO 3 (DESPUÉS): Vuelve a ejecutar la consulta del PASO 1.
+-- Demuestra cómo el hash previo fue automáticamente empujado a TB_Historial_Contrasenas
+-- para cumplir con la norma NIST de no-reutilización de las últimas N contraseñas.
+GO
+
+
+-- -------------------------------------------------------------------------
+-- CASO 3: TRAZABILIDAD EN LA BITÁCORA TRANSVERSAL (SP_Auditoria_Consultar)
+-- -------------------------------------------------------------------------
+-- Consulta los últimos 5 eventos registrados en toda la empresa.
+-- Se demuestra que la tabla Bitacora almacena registros generados por
+-- Ventas, Compras, Inventario y Seguridad bajo un mismo estándar inmutable en el Filegroup ME_Auditoria.
+SELECT TOP 5 
+    b.Id_Bitacora,
+    b.Fecha_Hora,
+    ISNULL(u.Nombre_Usuario, 'Sistema') AS Usuario,
+    b.Accion,
+    b.Tabla_Afectada,
+    b.Id_Registro_Afectado,
+    b.Descripcion
+FROM dbo.Bitacora b
+LEFT JOIN dbo.Usuario u ON b.Id_Usuario = u.Id_Usuario
+ORDER BY b.Id_Bitacora DESC;
+GO

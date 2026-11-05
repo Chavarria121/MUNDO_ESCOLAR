@@ -798,3 +798,127 @@ BEGIN
     ORDER BY Dias_Atraso DESC;
 END;
 GO
+
+/* =========================================================================
+   GUÍA PRÁCTICA DE EXPOSICIÓN EN VIVO: CONSULTAS ANTES Y DESPUÉS
+   MODULO 3: VENTAS, FACTURACIÓN ELECTRÓNICA Y PAGOS (POS)
+   INSTRUCCIONES PARA EL EXPOSITOR (SSMS 22):
+   - Selecciona con el mouse el bloque de consulta indicado y presiona F5.
+   - Sigue los pasos numerados coordinando con tu compañero en el Frontend.
+   ========================================================================= */
+
+-- -------------------------------------------------------------------------
+-- CASO 1: VENTA EN MOSTRADOR (POS), FACTURACIÓN DGT 50 DÍGITOS Y KÁRDEX
+-- -------------------------------------------------------------------------
+-- PASO 1 (ANTES): Consulta el stock disponible del producto antes de venderlo
+-- y el consecutivo de la última factura emitida.
+SELECT 
+    p.Id_Producto,
+    p.Nombre AS Producto,
+    p.Stock_Actual,
+    p.Precio_Venta
+FROM dbo.Producto p
+WHERE p.Id_Producto = 1; -- (Ejemplo: Cuaderno Cosido 100 Hojas)
+
+SELECT TOP 1 
+    f.Id_Factura,
+    f.Clave_Numerica_Fiscal,
+    LEN(f.Clave_Numerica_Fiscal) AS Longitud_Clave,
+    f.Monto_Total,
+    f.Fecha_Emision
+FROM dbo.Factura f
+ORDER BY f.Id_Factura DESC;
+
+-- PASO 2 (ACCIÓN DEL COMPAÑERO EN EL FRONTEND):
+-- En la pantalla Caja / POS (/caja), el compañero agrega 1 Cuaderno Cosido y 1 Servicio de Fotocopia,
+-- selecciona el método de pago Efectivo o SINPE y presiona "Completar Venta y Emitir Factura".
+
+-- PASO 3 (DESPUÉS): Ejecuta esta consulta para demostrar a Torrentes la integración 100% transaccional:
+-- 1. La Venta cerrada en dbo.Venta con desglose de impuestos y total.
+-- 2. La Factura Electrónica con la Clave Numérica de 50 dígitos exigida por la DGT (Ley 9635).
+-- 3. El Recibo financiero en dbo.Pago con el método utilizado.
+-- 4. El rebajo inmediato en el libro Kárdex de Inventario.
+
+-- 1. Cabecera de la Venta:
+SELECT TOP 1 
+    v.Id_Venta,
+    v.Fecha,
+    c.Nombre_O_RazonSocial AS Cliente,
+    v.Subtotal,
+    v.Impuesto,
+    v.Monto_Total,
+    ev.Nombre_Estado AS Estado_Venta,
+    u.Nombre_Usuario AS Cajero
+FROM dbo.Venta v
+INNER JOIN dbo.VW_ClientesActivos c ON v.Id_Cliente = c.Id_Cliente
+INNER JOIN dbo.Estado_Venta ev ON v.Id_Estado_Venta = ev.Id_Estado_Venta
+INNER JOIN dbo.Usuario u ON v.Id_Usuario = u.Id_Usuario
+ORDER BY v.Id_Venta DESC;
+
+-- 2. Factura Electrónica Oficial (Verificar Clave Numérica de 50 dígitos):
+SELECT TOP 1 
+    f.Id_Factura,
+    f.Clave_Numerica_Fiscal,
+    LEN(f.Clave_Numerica_Fiscal) AS Longitud_Clave_Hacienda, -- Debe ser exactamente 50
+    f.Monto_Total,
+    f.Saldo_Pendiente,
+    ef.Nombre_Estado AS Estado_Factura
+FROM dbo.Factura f
+INNER JOIN dbo.Estado_Factura ef ON f.Id_Estado_Factura = ef.Id_Estado_Factura
+ORDER BY f.Id_Factura DESC;
+
+-- 3. Asiento de Pago Financiero:
+SELECT TOP 1 
+    p.Id_Pago,
+    p.Fecha_Pago,
+    p.Monto_Pagado,
+    mp.Nombre AS Metodo_Pago,
+    p.Numero_Referencia
+FROM dbo.Pago p
+INNER JOIN dbo.Metodo_Pago mp ON p.Id_Metodo_Pago = mp.Id_Metodo_Pago
+ORDER BY p.Id_Pago DESC;
+
+-- 4. Movimiento de Salida en Kárdex:
+SELECT TOP 1 
+    m.Id_Movimiento_Inventario,
+    m.Producto,
+    m.Tipo_Movimiento,
+    m.Cantidad AS Cantidad_Rebajada,
+    m.Motivo,
+    m.Responsable
+FROM dbo.VW_MovimientosInventario m
+WHERE m.Naturaleza = 'Salida'
+ORDER BY m.Id_Movimiento_Inventario DESC;
+GO
+
+
+-- -------------------------------------------------------------------------
+-- CASO 2: VENTA INSTITUCIONAL A CRÉDITO Y CREACIÓN DE CARTERA
+-- -------------------------------------------------------------------------
+-- PASO 1 (ANTES): Consulta el límite y permisos de crédito de un cliente institucional
+SELECT 
+    c.Id_Cliente,
+    c.Nombre_O_RazonSocial AS Cliente,
+    c.Limite_Credito_Monto,
+    c.Limite_Credito_Facturas,
+    c.Permite_Credito,
+    c.Condiciones_Autorizadas
+FROM dbo.VW_ClientesActivos c
+WHERE c.Id_Cliente = 1;
+
+-- PASO 2 (ACCIÓN DEL COMPAÑERO EN EL FRONTEND):
+-- En /caja, el compañero selecciona al cliente institucional, elige condición de pago "Crédito"
+-- y procesa la venta.
+
+-- PASO 3 (DESPUÉS): Ejecuta esta consulta para demostrar la venta y factura en estado de crédito:
+SELECT TOP 1 
+    f.Id_Factura,
+    f.Clave_Numerica_Fiscal,
+    f.Monto_Total,
+    f.Saldo_Pendiente,
+    ef.Nombre_Estado AS Estado_Factura,
+    f.Fecha_Vencimiento
+FROM dbo.Factura f
+INNER JOIN dbo.Estado_Factura ef ON f.Id_Estado_Factura = ef.Id_Estado_Factura
+ORDER BY f.Id_Factura DESC;
+GO

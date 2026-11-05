@@ -401,3 +401,46 @@ BEGIN
     ORDER BY Fecha_Hora DESC;
 END;
 GO
+
+/* =========================================================================
+   GUÍA PRÁCTICA DE EXPOSICIÓN EN VIVO: CONSULTAS ANTES Y DESPUÉS
+   MODULO 5: ADMINISTRACIÓN DE BASE DE DATOS (DBA) Y MANTENIMIENTO
+   INSTRUCCIONES PARA EL EXPOSITOR (SSMS 22):
+   - Ejecuta directamente cada procedimiento almacenado para demostrar la gobernanza del motor.
+   ========================================================================= */
+
+-- -------------------------------------------------------------------------
+-- CASO 1: EJECUCIÓN DE RESPALDOS Y CONSULTA EN MSDB (SP_DBA_EjecutarBackupDiferencial)
+-- -------------------------------------------------------------------------
+-- PASO 1: Ejecutar backup diferencial con compresión y checksum en vivo:
+EXEC dbo.SP_DBA_EjecutarBackupDiferencial;
+
+-- PASO 2: Consultar el historial oficial en las tablas de MSDB:
+-- Demuestra el tipo de respaldo (D = Diferencial, D = Database Full, L = Log),
+-- la tasa de compresión y la verificación de integridad.
+EXEC dbo.SP_DBA_ConsultarHistorialBackups;
+GO
+
+
+-- -------------------------------------------------------------------------
+-- CASO 2: MONITOREO FÍSICO DE LOS 5 FILEGROUPS (SP_DBA_MonitorearEspacioArchivos)
+-- -------------------------------------------------------------------------
+-- Demuestra el aislamiento de datos por Filegroups (Tiered Storage):
+-- PRIMARY: Catálogo del sistema
+-- ME_Transaccional: Ventas, Compras y Facturación
+-- ME_Auditoria: Bitácora de auditoría inmutable
+-- ME_Catalogos: Productos, Categorías y Clientes
+-- ME_DW: Tablas analíticas y dimensiones Kimball
+EXEC dbo.SP_DBA_MonitorearEspacioArchivos;
+GO
+
+
+-- -------------------------------------------------------------------------
+-- CASO 3: GOBERNANZA FÍSICA E INTEGRIDAD DEL MOTOR
+-- -------------------------------------------------------------------------
+-- 1. Evaluar fragmentación y mantenimiento automático de índices:
+EXEC dbo.SP_DBA_MantenimientoIndices;
+
+-- 2. Ejecutar verificación de consistencia física de páginas (DBCC CHECKDB):
+EXEC dbo.SP_DBA_VerificarIntegridadBD;
+GO

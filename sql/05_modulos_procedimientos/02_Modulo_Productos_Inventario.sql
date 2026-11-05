@@ -529,3 +529,98 @@ BEGIN
     END CATCH
 END;
 GO
+
+/* =========================================================================
+   GUÍA PRÁCTICA DE EXPOSICIÓN EN VIVO: CONSULTAS ANTES Y DESPUÉS
+   MODULO 2: PRODUCTOS, CATÁLOGO E INVENTARIO
+   INSTRUCCIONES PARA EL EXPOSITOR (SSMS 22):
+   - Selecciona con el mouse el bloque de consulta indicado y presiona F5.
+   - Sigue los pasos numerados coordinando con tu compañero en el Frontend.
+   ========================================================================= */
+
+-- -------------------------------------------------------------------------
+-- CASO 1: AJUSTE DE INVENTARIO FÍSICO POR MERMA / TOMA FÍSICA (SP_Inventario_Ajustar)
+-- -------------------------------------------------------------------------
+-- PASO 1 (ANTES): Consulta el stock actual del artículo antes del ajuste (Ejemplo: Producto #14)
+SELECT 
+    p.Id_Producto,
+    p.Nombre AS Producto,
+    c.Nombre AS Categoria,
+    p.Stock_Actual,
+    p.Punto_Reorden,
+    p.Precio_Venta,
+    p.Estado
+FROM dbo.Producto p
+INNER JOIN dbo.Categoria c ON p.Id_Categoria = c.Id_Categoria
+WHERE p.Id_Producto = 14;
+
+-- Ver los últimos movimientos de Kárdex registrados para ese producto:
+SELECT TOP 2 
+    m.Id_Movimiento_Inventario,
+    m.Fecha,
+    m.Tipo_Movimiento,
+    m.Naturaleza,
+    m.Cantidad,
+    m.Motivo,
+    m.Responsable
+FROM dbo.VW_MovimientosInventario m
+WHERE m.Id_Producto = 14
+ORDER BY m.Id_Movimiento_Inventario DESC;
+
+-- PASO 2 (ACCIÓN DEL COMPAÑERO EN EL FRONTEND):
+-- En la pantalla Inventario (/inventario), el compañero localiza el artículo #14 (Cuaderno Escolar),
+-- presiona el botón de "Ajustar Stock", ingresa una salida por merma de 2 unidades y confirma.
+
+-- PASO 3 (DESPUÉS): Ejecuta nuevamente la consulta para demostrar:
+-- 1. La disminución exacta de 2 unidades en el stock físico de dbo.Producto.
+-- 2. El nuevo asiento en VW_MovimientosInventario con tipo 'Ajuste Negativo' o 'Salida'.
+-- 3. La bitácora transversal registrando quién hizo el ajuste.
+SELECT 
+    p.Id_Producto,
+    p.Nombre AS Producto,
+    p.Stock_Actual AS Stock_Actualizado,
+    p.Punto_Reorden
+FROM dbo.Producto p
+WHERE p.Id_Producto = 14;
+
+SELECT TOP 1 
+    m.Id_Movimiento_Inventario,
+    m.Fecha,
+    m.Producto,
+    m.Tipo_Movimiento,
+    m.Cantidad,
+    m.Motivo,
+    m.Responsable
+FROM dbo.VW_MovimientosInventario m
+WHERE m.Id_Producto = 14
+ORDER BY m.Id_Movimiento_Inventario DESC;
+
+SELECT TOP 1 
+    b.Id_Bitacora, b.Fecha_Hora, ISNULL(u.Nombre_Usuario, 'Sistema') AS Usuario,
+    b.Accion, b.Tabla_Afectada, b.Id_Registro_Afectado, b.Descripcion
+FROM dbo.Bitacora b
+LEFT JOIN dbo.Usuario u ON b.Id_Usuario = u.Id_Usuario
+WHERE b.Tabla_Afectada = 'Producto' AND b.Id_Registro_Afectado = 14
+ORDER BY b.Id_Bitacora DESC;
+GO
+
+
+-- -------------------------------------------------------------------------
+-- CASO 2: GESTIÓN DE SERVICIOS ESCOLARES (FOTOCOPIAS / ANILLADOS)
+-- -------------------------------------------------------------------------
+-- PASO 1 (ANTES): Consulta el catálogo de servicios escolares y sus tarifas activas
+SELECT 
+    Id_Servicio,
+    Nombre,
+    Descripcion,
+    Precio_Base,
+    Estado
+FROM dbo.Servicio
+ORDER BY Id_Servicio;
+
+-- PASO 2 (ACCIÓN DEL COMPAÑERO EN EL FRONTEND):
+-- En /inventario (Pestaña "Servicios Escolares"), el compañero edita el precio base de un servicio
+-- o registra uno nuevo (ej. "Encuadernación Térmica").
+
+-- PASO 3 (DESPUÉS): Vuelve a ejecutar la consulta del PASO 1 para ver la actualización reflejada en la tabla física.
+GO
