@@ -44,6 +44,10 @@ GO
 USE MUNDO_ESCOLAR
 GO
 
+SET ANSI_NULLS ON;
+SET QUOTED_IDENTIFIER ON;
+GO
+
 -- 2. CREACIÓN DE USUARIOS DENTRO DE LA BASE DE DATOS (15_CrearUsuariosBD.sql)
 IF NOT EXISTS (SELECT 1 FROM sys.database_principals WHERE name = 'usr_mundo_admin')
     CREATE USER usr_mundo_admin FOR LOGIN login_mundo_admin;

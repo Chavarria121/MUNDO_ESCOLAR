@@ -25,6 +25,10 @@
 USE MUNDO_ESCOLAR
 GO
 
+SET ANSI_NULLS ON;
+SET QUOTED_IDENTIFIER ON;
+GO
+
 SET NOCOUNT ON;
 PRINT '=========================================================================';
 PRINT '   REVISIÓN TÉCNICA DE INSTALACIÓN Y CONTEOS UNIFICADOS - MUNDO_ESCOLAR';
