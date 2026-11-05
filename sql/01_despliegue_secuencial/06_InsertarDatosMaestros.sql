@@ -1,4 +1,4 @@
-﻿/* =========================================================================
+/* =========================================================================
    PROYECTO: LIBRERÍA Y PAPELERÍA MUNDO ESCOLAR
    SCRIPT: 06_InsertarDatosMaestros.sql
    REQUERIMIENTOS: RF1–RF4, RA1
@@ -350,7 +350,7 @@ SELECT p.Id_Producto, @IdProvNacional,
        ROUND(p.Precio_Venta * 0.65, 2), -- 35% margen bruto
        1, 1
 FROM Producto p
-WHERE p.Nombre IN ('Resma Papel Bond Carta 75g', 'Cartulina Blanca Pliego', 'Cuaderno Cosido 100 Hojas', 'Cuaderno Espiral 100 Hojas')
+WHERE p.Nombre IN ('Resma Papel Bond Carta 75g', 'Cartulina Blanca Pliego', 'Cuaderno Cosido 100 Hojas', 'Cuaderno Espiral 100 Hojas', 'Cuaderno Escolar')
   AND NOT EXISTS (
       SELECT 1 FROM Producto_Proveedor pp 
       WHERE pp.Id_Producto = p.Id_Producto AND pp.Id_Proveedor = @IdProvNacional
