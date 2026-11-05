@@ -8,6 +8,13 @@ import {
   Printer,
   Clock,
   Layers,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
 } from 'lucide-react';
 import api from '../api/client';
 import { useAuth } from '../context/AuthContext';
@@ -39,6 +46,100 @@ function cleanText(str) {
   return str;
 }
 
+// Humanizador inteligente de descripciones de bitácora
+export function humanizarDescripcion(desc, tabla) {
+  if (!desc || typeof desc !== 'string') return desc;
+  let text = cleanText(desc);
+
+  // Catálogos oficiales de Mundo Escolar
+  const proveedores = {
+    '1': 'Papelera Nacional S.A.',
+    '2': 'Distribuidora Escolar del Valle S.A.',
+    '3': 'Carlos Mora Solano',
+  };
+
+  const clientes = {
+    '1': 'María Rodríguez Pérez',
+    '2': 'Corp. Educativa del Norte S.A.',
+    '3': 'Esteban Solís Brenes',
+    '4': 'Escuela San Antonio',
+    '5': 'Colegio Bilingüe de Liberia',
+  };
+
+  const metodosPago = {
+    '1': 'Efectivo',
+    '2': 'Tarjeta de Débito',
+    '3': 'Tarjeta de Crédito',
+    '4': 'Transferencia Bancaria',
+    '5': 'SINPE Móvil',
+  };
+
+  const estadosCompra = {
+    '1': 'Pendiente',
+    '2': 'Recibida',
+    '3': 'Anulada',
+  };
+
+  const estadosVenta = {
+    '1': 'Pendiente',
+    '2': 'Confirmada',
+    '3': 'Anulada',
+  };
+
+  const estadosFactura = {
+    '1': 'Pendiente',
+    '2': 'Pagada Parcial',
+    '3': 'Pagada Total',
+    '4': 'Anulada',
+  };
+
+  const tabLower = (tabla || '').toLowerCase();
+
+  // 1. Reemplazo de Proveedor
+  text = text.replace(/Proveedor:\s*(\d+)/gi, (match, id) => {
+    const nombre = proveedores[id];
+    return nombre ? `Proveedor: #${id} (${nombre})` : `Proveedor: #${id}`;
+  });
+
+  // 2. Reemplazo de Cliente
+  text = text.replace(/Cliente:\s*(\d+)/gi, (match, id) => {
+    const nombre = clientes[id];
+    return nombre ? `Cliente: #${id} (${nombre})` : `Cliente: #${id}`;
+  });
+
+  // 3. Reemplazo de Método de Pago
+  text = text.replace(/M[eé]todo:\s*(\d+)/gi, (match, id) => {
+    const nombre = metodosPago[id];
+    return nombre ? `Método: #${id} (${nombre})` : `Método: #${id}`;
+  });
+
+  // 4. Reemplazo de transiciones de Estado (Ej: Estado: 1 -> 2)
+  text = text.replace(/Estado:\s*(\d+)\s*->\s*(\d+)/gi, (match, id1, id2) => {
+    const dic = tabLower.includes('factura') ? estadosFactura : tabLower.includes('compra') ? estadosCompra : estadosVenta;
+    const n1 = dic[id1] ? `${dic[id1]} (#${id1})` : `#${id1}`;
+    const n2 = dic[id2] ? `${dic[id2]} (#${id2})` : `#${id2}`;
+    return `Estado: ${n1} ➔ ${n2}`;
+  });
+
+  // 5. Reemplazo de Estado simple
+  text = text.replace(/Estado:\s*(\d+)/gi, (match, id) => {
+    const dic = tabLower.includes('factura') ? estadosFactura : tabLower.includes('compra') ? estadosCompra : estadosVenta;
+    const nombre = dic[id];
+    return nombre ? `Estado: #${id} (${nombre})` : `Estado: #${id}`;
+  });
+
+  // 6. Formateo de montos numéricos a moneda nacional ₡
+  text = text.replace(/(Monto|Saldo):\s*([0-9]+(\.[0-9]+)?)/gi, (match, label, valor) => {
+    const num = parseFloat(valor);
+    if (!isNaN(num)) {
+      return `${label}: ₡${num.toLocaleString('es-CR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    }
+    return match;
+  });
+
+  return text;
+}
+
 export default function AuditoriaPage() {
   const { user } = useAuth();
   const { showToast } = useToast();
@@ -51,6 +152,14 @@ export default function AuditoriaPage() {
   const [busqueda, setBusqueda] = useState('');
   const [filtroAccion, setFiltroAccion] = useState('TODAS'); // 'TODAS' | 'INSERT' | 'UPDATE' | 'DELETE'
   const [filtroTabla, setFiltroTabla] = useState('TODAS');
+
+  // Ordenamiento
+  const [ordenCampo, setOrdenCampo] = useState('Id_Bitacora'); // 'Id_Bitacora' | 'Fecha_Hora' | 'Nombre_Usuario' | 'Accion' | 'Tabla_Afectada' | 'Id_Registro_Afectado' | 'Descripcion'
+  const [ordenDireccion, setOrdenDireccion] = useState('desc'); // 'asc' | 'desc'
+
+  // Paginación
+  const [paginaActual, setPaginaActual] = useState(1);
+  const [filasPorPagina, setFilasPorPagina] = useState(25);
 
   useEffect(() => {
     cargarAuditoria();
@@ -68,6 +177,7 @@ export default function AuditoriaPage() {
       const cleaned = rawRegistros.map((r) => ({
         ...r,
         Descripcion: cleanText(r.Descripcion),
+        DescripcionHumanizada: humanizarDescripcion(r.Descripcion, r.Tabla_Afectada),
         Tabla_Afectada: cleanText(r.Tabla_Afectada),
       }));
 
@@ -103,6 +213,22 @@ export default function AuditoriaPage() {
     };
   }, [registros, permisosFallidos]);
 
+  // Manejador de ordenamiento al hacer clic en columnas
+  const alternarOrden = (campo) => {
+    if (ordenCampo === campo) {
+      setOrdenDireccion((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setOrdenCampo(campo);
+      // Por defecto descendente para IDs y fechas, ascendente para texto
+      if (campo === 'Id_Bitacora' || campo === 'Fecha_Hora' || campo === 'Id_Registro_Afectado') {
+        setOrdenDireccion('desc');
+      } else {
+        setOrdenDireccion('asc');
+      }
+    }
+    setPaginaActual(1); // Reiniciar a primera página al ordenar
+  };
+
   // Filtrado reactivo
   const registrosFiltrados = useMemo(() => {
     const term = busqueda.toLowerCase().trim();
@@ -113,13 +239,72 @@ export default function AuditoriaPage() {
 
       if (!term) return true;
       const id = r.Id_Bitacora?.toString() || '';
+      const regId = r.Id_Registro_Afectado?.toString() || '';
       const u = (r.Nombre_Usuario || '').toLowerCase();
       const tab = (r.Tabla_Afectada || '').toLowerCase();
       const desc = (r.Descripcion || '').toLowerCase();
+      const descH = (r.DescripcionHumanizada || '').toLowerCase();
 
-      return id.includes(term) || u.includes(term) || tab.includes(term) || desc.includes(term);
+      return (
+        id.includes(term) ||
+        regId.includes(term) ||
+        u.includes(term) ||
+        tab.includes(term) ||
+        desc.includes(term) ||
+        descH.includes(term)
+      );
     });
   }, [registros, busqueda, filtroAccion, filtroTabla]);
+
+  // Ordenamiento de los registros filtrados
+  const registrosOrdenados = useMemo(() => {
+    return [...registrosFiltrados].sort((a, b) => {
+      let valA = a[ordenCampo];
+      let valB = b[ordenCampo];
+
+      // Manejo especial según el tipo de campo
+      if (ordenCampo === 'Fecha_Hora') {
+        valA = new Date(valA).getTime() || 0;
+        valB = new Date(valB).getTime() || 0;
+      } else if (ordenCampo === 'Id_Bitacora' || ordenCampo === 'Id_Registro_Afectado') {
+        valA = Number(valA) || 0;
+        valB = Number(valB) || 0;
+      } else if (typeof valA === 'string' || typeof valB === 'string') {
+        valA = (valA || '').toString().toLowerCase();
+        valB = (valB || '').toString().toLowerCase();
+      }
+
+      if (valA < valB) return ordenDireccion === 'asc' ? -1 : 1;
+      if (valA > valB) return ordenDireccion === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }, [registrosFiltrados, ordenCampo, ordenDireccion]);
+
+  // Paginación
+  const totalPaginas = Math.ceil(registrosOrdenados.length / filasPorPagina) || 1;
+  const paginaValida = Math.min(Math.max(paginaActual, 1), totalPaginas);
+
+  const registrosPaginados = useMemo(() => {
+    const inicio = (paginaValida - 1) * filasPorPagina;
+    return registrosOrdenados.slice(inicio, inicio + filasPorPagina);
+  }, [registrosOrdenados, paginaValida, filasPorPagina]);
+
+  // Reset de página al cambiar filtros
+  useEffect(() => {
+    setPaginaActual(1);
+  }, [busqueda, filtroAccion, filtroTabla, filasPorPagina]);
+
+  // Render del icono de orden en cabecera
+  const renderIconoOrden = (campo) => {
+    if (ordenCampo !== campo) {
+      return <ArrowUpDown className="w-3.5 h-3.5 text-[#5C3622]/40 opacity-0 group-hover:opacity-100 transition" />;
+    }
+    return ordenDireccion === 'asc' ? (
+      <ArrowUp className="w-3.5 h-3.5 text-[#C05A3E] font-bold" />
+    ) : (
+      <ArrowDown className="w-3.5 h-3.5 text-[#C05A3E] font-bold" />
+    );
+  };
 
   return (
     <div className="space-y-6 text-[#132B20]">
@@ -132,13 +317,13 @@ export default function AuditoriaPage() {
             </div>
             <div>
               <h2 className="text-lg font-black text-[#132B20] tracking-tight flex items-center gap-2">
-                Historial de Actividades y Seguridad
+                Historial de Actividades y Auditoría Forense
                 <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-[#F3ECE0] text-[#5C3622] border border-[#DFD5C4]">
-                  Registro de Operaciones
+                  Trazabilidad Total
                 </span>
               </h2>
               <p className="text-xs text-[#5C3622]/80 mt-0.5">
-                Librería & Papelería Mundo Escolar &bull; Liberia, Guanacaste &bull; Trazabilidad de Ventas, Inventario y Usuarios
+                Librería & Papelería Mundo Escolar &bull; Liberia, Guanacaste &bull; Registro Inmutable de Transacciones y Seguridad
               </p>
             </div>
           </div>
@@ -150,7 +335,7 @@ export default function AuditoriaPage() {
             className="flex items-center gap-1.5 px-4 py-2.5 text-xs font-bold text-[#132B20] bg-white border border-[#DFD5C4] hover:bg-[#F3ECE0] rounded-xl transition shadow-xs"
           >
             <Printer className="w-4 h-4 text-[#5C3622]" />
-            <span>Imprimir Historial</span>
+            <span>Imprimir Bitácora</span>
           </button>
           <button
             onClick={cargarAuditoria}
@@ -177,7 +362,7 @@ export default function AuditoriaPage() {
             {metricas.total}
           </span>
           <span className="text-xs text-[#2D5E46] font-semibold mt-1 block">
-            Operaciones registradas al día
+            Operaciones auditadas en FG_AUDITORIA
           </span>
         </div>
 
@@ -191,7 +376,7 @@ export default function AuditoriaPage() {
             {metricas.inserts}
           </span>
           <span className="text-xs text-[#2D5E46] font-semibold mt-1 block">
-            Entidades y documentos creados
+            Ventas, compras y pagos creados
           </span>
         </div>
 
@@ -224,7 +409,7 @@ export default function AuditoriaPage() {
         </div>
       </div>
 
-      {/* Barra de Búsqueda y Filtros */}
+      {/* Barra de Búsqueda, Filtros y Paginación */}
       <div className="bg-white rounded-2xl border border-[#DFD5C4] p-4 shadow-subtle flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs no-print">
         <div className="relative flex-1 max-w-md">
           <Search className="w-4 h-4 text-[#5C3622]/60 absolute left-3.5 top-1/2 -translate-y-1/2" />
@@ -232,7 +417,7 @@ export default function AuditoriaPage() {
             type="text"
             value={busqueda}
             onChange={(e) => setBusqueda(e.target.value)}
-            placeholder="Buscar por usuario, módulo o descripción del cambio..."
+            placeholder="Buscar por usuario, módulo, descripción o ID..."
             className="w-full pl-9 pr-4 py-2 bg-[#FAF7F0] border border-[#DFD5C4] rounded-xl text-[#132B20] placeholder-[#5C3622]/50 focus:outline-none focus:ring-2 focus:ring-[#C05A3E] text-xs font-medium"
           />
         </div>
@@ -267,6 +452,21 @@ export default function AuditoriaPage() {
               </option>
             ))}
           </select>
+
+          {/* Selector de filas por página */}
+          <div className="flex items-center gap-1.5 pl-2 border-l border-[#DFD5C4]">
+            <span className="text-[#5C3622] font-semibold">Ver:</span>
+            <select
+              value={filasPorPagina}
+              onChange={(e) => setFilasPorPagina(Number(e.target.value))}
+              className="bg-[#FAF7F0] border border-[#DFD5C4] rounded-xl px-2 py-1.5 font-bold text-[#132B20] text-xs cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#C05A3E]"
+            >
+              <option value={10}>10</option>
+              <option value={25}>25</option>
+              <option value={50}>50</option>
+              <option value={100}>100</option>
+            </select>
+          </div>
         </div>
       </div>
 
@@ -284,87 +484,240 @@ export default function AuditoriaPage() {
         </div>
       </div>
 
-      {/* Tabla del Historial de Actividades */}
+      {/* Tabla del Historial de Actividades con Cabeceras Ordenables */}
       <div className="bg-white rounded-3xl border border-[#DFD5C4] shadow-subtle overflow-hidden print:border-none print:shadow-none print:rounded-none">
         {loading ? (
           <div className="p-16 text-center text-[#5C3622] space-y-3">
             <div className="w-8 h-8 border-3 border-[#DFD5C4] border-t-[#C05A3E] rounded-full animate-spin mx-auto" />
-            <p className="font-bold text-xs">Cargando historial de actividades...</p>
+            <p className="font-bold text-xs">Cargando bitácora de actividades...</p>
           </div>
-        ) : registrosFiltrados.length === 0 ? (
+        ) : registrosOrdenados.length === 0 ? (
           <div className="p-16 text-center text-[#5C3622]/70 space-y-2">
             <FileText className="w-10 h-10 text-[#DFD5C4] mx-auto mb-2" />
             <p className="font-bold text-sm">Sin eventos para el filtro seleccionado</p>
             <p className="text-xs">Intenta modificando el término de búsqueda o el tipo de acción.</p>
           </div>
         ) : (
-          <div className="overflow-x-auto print:overflow-visible">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-[#F3ECE0]/80 text-[#5C3622] uppercase tracking-wider font-bold border-b border-[#DFD5C4]">
-                <tr>
-                  <th className="py-3.5 px-4"># Registro</th>
-                  <th className="py-3.5 px-4">Fecha y Hora</th>
-                  <th className="py-3.5 px-4">Usuario</th>
-                  <th className="py-3.5 px-4 text-center">Acción</th>
-                  <th className="py-3.5 px-4">Módulo / Registro</th>
-                  <th className="py-3.5 px-4 text-center">ID Afectado</th>
-                  <th className="py-3.5 px-4">Descripción del Cambio</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#DFD5C4]/50 font-medium text-[#132B20]">
-                {registrosFiltrados.map((r) => {
-                  const esInsert = r.Accion === 'INSERT';
-                  const esUpdate = r.Accion === 'UPDATE';
-                  const esDelete = r.Accion === 'DELETE';
+          <>
+            <div className="overflow-x-auto print:overflow-visible">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-[#F3ECE0]/80 text-[#5C3622] uppercase tracking-wider font-bold border-b border-[#DFD5C4] select-none">
+                  <tr>
+                    {/* # Registro */}
+                    <th
+                      onClick={() => alternarOrden('Id_Bitacora')}
+                      className="py-3.5 px-4 cursor-pointer hover:bg-[#EAE0D0] transition group"
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <span># Registro</span>
+                        {renderIconoOrden('Id_Bitacora')}
+                      </div>
+                    </th>
 
-                  return (
-                    <tr key={r.Id_Bitacora} className="hover:bg-[#FAF7F0] transition print:break-inside-avoid">
-                      <td className="py-3.5 px-4 font-mono font-bold text-[#C05A3E]">
-                        #{r.Id_Bitacora?.toString().padStart(6, '0')}
-                      </td>
+                    {/* Fecha y Hora */}
+                    <th
+                      onClick={() => alternarOrden('Fecha_Hora')}
+                      className="py-3.5 px-4 cursor-pointer hover:bg-[#EAE0D0] transition group"
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <span>Fecha y Hora</span>
+                        {renderIconoOrden('Fecha_Hora')}
+                      </div>
+                    </th>
 
-                      <td className="py-3.5 px-4 whitespace-nowrap text-[#5C3622]">
-                        {new Date(r.Fecha_Hora).toLocaleDateString('es-CR')}
-                        <span className="block text-[10px] text-[#5C3622]/70">
-                          {new Date(r.Fecha_Hora).toLocaleTimeString('es-CR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                        </span>
-                      </td>
+                    {/* Usuario */}
+                    <th
+                      onClick={() => alternarOrden('Nombre_Usuario')}
+                      className="py-3.5 px-4 cursor-pointer hover:bg-[#EAE0D0] transition group"
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <span>Usuario</span>
+                        {renderIconoOrden('Nombre_Usuario')}
+                      </div>
+                    </th>
 
-                      <td className="py-3.5 px-4 font-mono font-bold text-[#132B20]">
-                        {r.Nombre_Usuario}
-                      </td>
+                    {/* Acción */}
+                    <th
+                      onClick={() => alternarOrden('Accion')}
+                      className="py-3.5 px-4 text-center cursor-pointer hover:bg-[#EAE0D0] transition group"
+                    >
+                      <div className="flex items-center justify-center gap-1.5">
+                        <span>Acción</span>
+                        {renderIconoOrden('Accion')}
+                      </div>
+                    </th>
 
-                      <td className="py-3.5 px-4 text-center">
-                        <span
-                          className={`px-2.5 py-0.5 rounded-full font-bold text-[10px] ${
-                            esInsert
-                              ? 'bg-[#1A3D2F]/10 text-[#2D5E46] border border-[#2D5E46]/40'
-                              : esUpdate
-                              ? 'bg-[#F3ECE0] text-[#5C3622] border border-[#DFD5C4]'
-                              : 'bg-[#C05A3E]/10 text-[#C05A3E] border border-[#C05A3E]/30'
-                          }`}
-                        >
-                          {r.Accion}
-                        </span>
-                      </td>
+                    {/* Módulo / Registro */}
+                    <th
+                      onClick={() => alternarOrden('Tabla_Afectada')}
+                      className="py-3.5 px-4 cursor-pointer hover:bg-[#EAE0D0] transition group"
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <span>Módulo / Registro</span>
+                        {renderIconoOrden('Tabla_Afectada')}
+                      </div>
+                    </th>
 
-                      <td className="py-3.5 px-4 font-bold text-[#132B20]">
-                        {cleanText(r.Tabla_Afectada)}
-                      </td>
+                    {/* ID Afectado */}
+                    <th
+                      onClick={() => alternarOrden('Id_Registro_Afectado')}
+                      className="py-3.5 px-4 text-center cursor-pointer hover:bg-[#EAE0D0] transition group"
+                    >
+                      <div className="flex items-center justify-center gap-1.5">
+                        <span>ID Afectado</span>
+                        {renderIconoOrden('Id_Registro_Afectado')}
+                      </div>
+                    </th>
 
-                      <td className="py-3.5 px-4 text-center font-mono font-bold text-[#5C3622]">
-                        {r.Id_Registro_Afectado ? `#${r.Id_Registro_Afectado}` : 'N/A'}
-                      </td>
+                    {/* Descripción del Cambio */}
+                    <th
+                      onClick={() => alternarOrden('Descripcion')}
+                      className="py-3.5 px-4 cursor-pointer hover:bg-[#EAE0D0] transition group"
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <span>Descripción del Cambio (Datos Auditados)</span>
+                        {renderIconoOrden('Descripcion')}
+                      </div>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#DFD5C4]/50 font-medium text-[#132B20]">
+                  {registrosPaginados.map((r) => {
+                    const esInsert = r.Accion === 'INSERT';
+                    const esUpdate = r.Accion === 'UPDATE';
+                    const esDelete = r.Accion === 'DELETE';
 
-                      <td className="py-3.5 px-4 text-[#5C3622] max-w-md" title={r.Descripcion}>
-                        <p className="line-clamp-2 leading-relaxed">{cleanText(r.Descripcion)}</p>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                    return (
+                      <tr key={r.Id_Bitacora} className="hover:bg-[#FAF7F0] transition print:break-inside-avoid">
+                        {/* # Registro */}
+                        <td className="py-3.5 px-4 font-mono font-bold text-[#C05A3E]">
+                          #{r.Id_Bitacora?.toString().padStart(6, '0')}
+                        </td>
+
+                        {/* Fecha y Hora */}
+                        <td className="py-3.5 px-4 whitespace-nowrap text-[#5C3622]">
+                          {new Date(r.Fecha_Hora).toLocaleDateString('es-CR')}
+                          <span className="block text-[10px] text-[#5C3622]/70 font-mono">
+                            {new Date(r.Fecha_Hora).toLocaleTimeString('es-CR', {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                              second: '2-digit',
+                            })}
+                          </span>
+                        </td>
+
+                        {/* Usuario */}
+                        <td className="py-3.5 px-4 font-mono font-bold text-[#132B20]">
+                          <span className="px-2 py-0.5 rounded-md bg-[#FAF7F0] border border-[#DFD5C4]/60">
+                            {r.Nombre_Usuario}
+                          </span>
+                        </td>
+
+                        {/* Acción */}
+                        <td className="py-3.5 px-4 text-center">
+                          <span
+                            className={`px-2.5 py-0.5 rounded-full font-bold text-[10px] ${
+                              esInsert
+                                ? 'bg-[#1A3D2F]/10 text-[#2D5E46] border border-[#2D5E46]/40'
+                                : esUpdate
+                                ? 'bg-[#F3ECE0] text-[#5C3622] border border-[#DFD5C4]'
+                                : 'bg-[#C05A3E]/10 text-[#C05A3E] border border-[#C05A3E]/30'
+                            }`}
+                          >
+                            {r.Accion}
+                          </span>
+                        </td>
+
+                        {/* Módulo / Registro */}
+                        <td className="py-3.5 px-4 font-bold text-[#132B20]">
+                          {cleanText(r.Tabla_Afectada)}
+                        </td>
+
+                        {/* ID Afectado */}
+                        <td className="py-3.5 px-4 text-center font-mono font-bold text-[#5C3622]">
+                          {r.Id_Registro_Afectado ? (
+                            <span className="px-2 py-0.5 rounded-md bg-[#F3ECE0]/60">
+                              #{r.Id_Registro_Afectado}
+                            </span>
+                          ) : (
+                            <span className="text-[#5C3622]/40">N/A</span>
+                          )}
+                        </td>
+
+                        {/* Descripción Humanizada y Clara */}
+                        <td className="py-3.5 px-4 text-[#5C3622] max-w-lg" title={r.Descripcion}>
+                          <p className="leading-relaxed font-normal text-xs text-[#132B20]">
+                            {r.DescripcionHumanizada || cleanText(r.Descripcion)}
+                          </p>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Barra de Paginación y Resumen */}
+            <div className="p-4 bg-[#FAF7F0] border-t border-[#DFD5C4] flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-[#5C3622] font-semibold no-print">
+              <div>
+                Mostrando del{' '}
+                <span className="font-bold text-[#132B20]">
+                  {(paginaValida - 1) * filasPorPagina + 1}
+                </span>{' '}
+                al{' '}
+                <span className="font-bold text-[#132B20]">
+                  {Math.min(paginaValida * filasPorPagina, registrosOrdenados.length)}
+                </span>{' '}
+                de <span className="font-bold text-[#132B20]">{registrosOrdenados.length}</span> eventos
+                {registrosFiltrados.length !== registros.length && (
+                  <span className="text-[11px] text-[#C05A3E] ml-1">
+                    (filtrados de {registros.length} totales)
+                  </span>
+                )}
+              </div>
+
+              {/* Botones de Navegación */}
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() => setPaginaActual(1)}
+                  disabled={paginaValida === 1}
+                  title="Primera página"
+                  className="p-1.5 rounded-lg border border-[#DFD5C4] bg-white hover:bg-[#F3ECE0] text-[#132B20] disabled:opacity-30 disabled:pointer-events-none transition"
+                >
+                  <ChevronsLeft className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => setPaginaActual((p) => Math.max(p - 1, 1))}
+                  disabled={paginaValida === 1}
+                  title="Página anterior"
+                  className="p-1.5 rounded-lg border border-[#DFD5C4] bg-white hover:bg-[#F3ECE0] text-[#132B20] disabled:opacity-30 disabled:pointer-events-none transition"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+
+                <div className="px-3 py-1 font-bold bg-white border border-[#DFD5C4] rounded-lg text-[#132B20]">
+                  Página {paginaValida} de {totalPaginas}
+                </div>
+
+                <button
+                  onClick={() => setPaginaActual((p) => Math.min(p + 1, totalPaginas))}
+                  disabled={paginaValida === totalPaginas}
+                  title="Página siguiente"
+                  className="p-1.5 rounded-lg border border-[#DFD5C4] bg-white hover:bg-[#F3ECE0] text-[#132B20] disabled:opacity-30 disabled:pointer-events-none transition"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => setPaginaActual(totalPaginas)}
+                  disabled={paginaValida === totalPaginas}
+                  title="Última página"
+                  className="p-1.5 rounded-lg border border-[#DFD5C4] bg-white hover:bg-[#F3ECE0] text-[#132B20] disabled:opacity-30 disabled:pointer-events-none transition"
+                >
+                  <ChevronsRight className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          </>
         )}
       </div>
     </div>

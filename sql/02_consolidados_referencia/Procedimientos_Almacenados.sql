@@ -806,12 +806,16 @@ GO
 -- 20. SP_Compra_Confirmar
 CREATE OR ALTER PROCEDURE dbo.SP_Compra_Confirmar
     @Id_Compra INT,
-    @Id_Usuario INT
+    @Id_Usuario INT,
+    @Fecha_Recepcion DATETIME = NULL
 AS
 BEGIN
     SET NOCOUNT ON;
     BEGIN TRY
         BEGIN TRANSACTION;
+
+        IF @Fecha_Recepcion IS NULL
+            SET @Fecha_Recepcion = GETDATE();
 
         DECLARE @EstadoActual VARCHAR(20);
         SELECT @EstadoActual = ec.Nombre_Estado 
@@ -850,7 +854,7 @@ BEGIN
             WHERE Id_Producto = @CursorProd;
 
             INSERT INTO Movimiento_Inventario (Id_Producto, Id_Tipo_Movimiento, Id_Usuario, Cantidad, Fecha, Motivo)
-            VALUES (@CursorProd, @IdTipoEntrada, @Id_Usuario, @CursorCant, GETDATE(), CONCAT('Recepción de Compra #', @Id_Compra));
+            VALUES (@CursorProd, @IdTipoEntrada, @Id_Usuario, @CursorCant, @Fecha_Recepcion, CONCAT('Recepción de Compra #', @Id_Compra));
 
             FETCH NEXT FROM cur_comp INTO @CursorProd, @CursorCant;
         END
