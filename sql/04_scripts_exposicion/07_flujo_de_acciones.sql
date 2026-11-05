@@ -48,27 +48,27 @@ GO
 -- 2. RECEPCIÓN DE COMPRAS Y MOVIMIENTO EN KÁRDEX (JOSE)
 -- =========================================================================
 
--- Consulta de orden de compra pendiente y existencias actuales
+-- Consulta dinámica de orden de compra pendiente y existencias actuales del producto
 SELECT TOP 1 
     c.Id_Compra,
     CONCAT('OC-', RIGHT('00000000' + CAST(c.Id_Compra AS VARCHAR(10)), 8)) AS Numero_Orden,
     prv.Nombre_O_RazonSocial AS Proveedor,
     ec.Nombre_Estado AS Estado_Compra,
     c.Fecha_Compra,
-    tot.TotalCompra AS Monto_Total,
-    tot.TotalArticulos AS Total_Unidades
+    p.Id_Producto,
+    p.Nombre AS Producto_A_Recibir,
+    p.Stock_Actual AS Stock_Fisico_Actual,
+    cp.Cantidad AS Unidades_Por_Ingresar,
+    (p.Stock_Actual + cp.Cantidad) AS Stock_Proyectado_Tras_Recepcion,
+    cp.Costo_Unitario,
+    cp.Subtotal AS Inversion_Linea
 FROM dbo.Compra c
 INNER JOIN dbo.Estado_Compra ec ON c.Id_Estado_Compra = ec.Id_Estado_Compra
 INNER JOIN dbo.VW_ProveedoresActivos prv ON c.Id_Proveedor = prv.Id_Proveedor
-OUTER APPLY (
-    SELECT SUM(Subtotal) AS TotalCompra, SUM(Cantidad) AS TotalArticulos 
-    FROM dbo.Compra_Producto WHERE Id_Compra = c.Id_Compra
-) tot
+INNER JOIN dbo.Compra_Producto cp ON c.Id_Compra = cp.Id_Compra
+INNER JOIN dbo.Producto p ON cp.Id_Producto = p.Id_Producto
 WHERE c.Id_Estado_Compra = 1 -- Pendiente
 ORDER BY c.Id_Compra DESC;
-
-SELECT Id_Producto, Nombre AS Producto, Stock_Actual, Punto_Reorden 
-FROM dbo.Producto WHERE Id_Producto = 14;
 
 -- Verificación de recepción, actualización de stock y asiento en Kárdex
 SELECT TOP 1 
