@@ -23,6 +23,12 @@ export class RolesController {
     return this.seguridad.consultarRoles(null, u.idUsuario);
   }
 
+  @Get('matriz/permisos')
+  @ApiOperation({ summary: 'Consultar matriz de roles y permisos' })
+  matriz(@UsuarioActual() u: UsuarioSesion) {
+    return this.seguridad.consultarMatriz(u.idUsuario);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Consultar un rol (SP_Rol_Consultar)' })
   async obtener(@Param('id', ParseIntPipe) id: number, @UsuarioActual() u: UsuarioSesion) {

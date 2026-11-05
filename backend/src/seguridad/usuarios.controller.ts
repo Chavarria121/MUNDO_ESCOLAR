@@ -17,6 +17,12 @@ import { AsignarRolDto, CrearUsuarioDto } from './dto/seguridad.dto';
 export class UsuariosController {
   constructor(private readonly seguridad: SeguridadService) {}
 
+  @Get()
+  @ApiOperation({ summary: 'Listar usuarios con roles (SP_Usuario_Consultar)' })
+  listar(@UsuarioActual() u: UsuarioSesion) {
+    return this.seguridad.consultarUsuarios(null, u.idUsuario);
+  }
+
   @Post()
   @ApiOperation({ summary: 'Crear usuario (SP_Usuario_Crear)' })
   crear(@Body() dto: CrearUsuarioDto, @UsuarioActual() u: UsuarioSesion) {

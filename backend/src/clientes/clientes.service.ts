@@ -6,6 +6,7 @@ import {
   ActualizarClienteDto,
   AutorizarCondicionPagoDto,
   ConsultarHistorialDto,
+  ConsultarHistorialGeneralDto,
   CrearClienteInstitucionalDto,
   CrearClienteParticularDto,
 } from './dto/clientes.dto';
@@ -116,6 +117,16 @@ export class ClientesService {
       Id_Cliente: idCliente,
       FechaInicio: dto.fechaInicio ? new Date(dto.fechaInicio) : null,
       FechaFin: dto.fechaFin ? new Date(dto.fechaFin) : null,
+    });
+  }
+
+  consultarHistorialGeneral(dto: ConsultarHistorialGeneralDto) {
+    return this.sql.consultarSP('SP_Cliente_HistorialGeneral', {
+      Id_Cliente: dto.idCliente ?? null,
+      Tipo_Cliente: dto.tipoCliente ?? null,
+      FechaInicio: dto.fechaInicio ? new Date(dto.fechaInicio) : null,
+      FechaFin: dto.fechaFin ? new Date(dto.fechaFin) : null,
+      Estado_Venta: dto.estadoVenta ?? null,
     });
   }
 
@@ -290,16 +301,26 @@ export class ClientesService {
     const c = res[0];
     if (!c) return null;
 
+    const saldo = Number(c.Saldo_Adeudado || 0);
+    const limiteMonto = Number(c.Limite_Credito_Monto || 300000);
+    const limiteFact = Number(c.Limite_Facturas || 3);
+    const factActivas = Number(c.Facturas_Activas_Credito || 0);
+    const disp = Number(c.Credito_Disponible != null ? c.Credito_Disponible : Math.max(0, limiteMonto - saldo));
+
     return {
       idCliente: c.Id_Cliente,
       nombreCliente: c.Nombre_Cliente,
       esMoroso: Boolean(c.Es_Moroso),
       facturasVencidas: Number(c.Facturas_Vencidas || 0),
-      facturasActivasCredito: Number(c.Facturas_Activas_Credito || 0),
-      limiteFacturas: Number(c.Limite_Facturas || 3),
-      saldoAdeudado: Number(c.Saldo_Adeudado || 0),
-      limiteCreditoMonto: Number(c.Limite_Credito_Monto || 300000),
-      creditoDisponible: Number(c.Credito_Disponible || 0),
+      facturasActivasCredito: factActivas,
+      facturasCreditoActivas: factActivas,
+      limiteFacturas: limiteFact,
+      limiteCreditoFacturas: limiteFact,
+      saldoAdeudado: saldo,
+      deudaActual: saldo,
+      limiteCreditoMonto: limiteMonto,
+      creditoDisponible: disp,
+      saldoCreditoDisponible: disp,
       permiteCredito: Boolean(c.Permite_Credito),
       puedeComprarCredito: Boolean(c.Puede_Comprar_Credito),
       puedeComprarContado: Boolean(c.Puede_Comprar_Contado),

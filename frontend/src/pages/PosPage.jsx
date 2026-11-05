@@ -337,6 +337,7 @@ export default function PosPage({ onNavigateToFacturacion }) {
 
     const prods = (tipoCatalogo === 'SERVICIOS' ? [] : productos)
       .filter((p) => {
+        if (p.Estado === false || p.Estado === 0) return false;
         if (categoriaSeleccionada !== 'TODOS' && categoriaSeleccionada !== 'Servicios') {
           if (p.Categoria !== categoriaSeleccionada) return false;
         }
@@ -362,6 +363,7 @@ export default function PosPage({ onNavigateToFacturacion }) {
 
     const servs = (tipoCatalogo === 'PRODUCTOS' ? [] : servicios)
       .filter((s) => {
+        if (s.Estado === false || s.Estado === 0) return false;
         if (categoriaSeleccionada !== 'TODOS' && categoriaSeleccionada !== 'Servicios') {
           return false;
         }
@@ -523,7 +525,7 @@ export default function PosPage({ onNavigateToFacturacion }) {
       }
       if (
         estadoCreditoCliente &&
-        Number(estadoCreditoCliente.deudaActual || 0) + total > Number(estadoCreditoCliente.limiteCreditoMonto || 300000)
+        Number(estadoCreditoCliente.deudaActual || estadoCreditoCliente.saldoAdeudado || 0) + total > Number(estadoCreditoCliente.limiteCreditoMonto || 300000)
       ) {
         showToast(
           `Esta venta excede el límite de crédito disponible del cliente (Tope: ₡${Number(
@@ -1175,7 +1177,7 @@ export default function PosPage({ onNavigateToFacturacion }) {
                       <span>CLIENTE MOROSO BLOQUEADO</span>
                     </div>
                     <p className="text-[10.5px] text-rose-200 leading-tight">
-                      Registra <strong>{estadoCreditoCliente.facturasVencidas} factura(s) vencida(s)</strong> por ₡{Number(estadoCreditoCliente.deudaActual).toLocaleString('es-CR')}.
+                      Registra <strong>{estadoCreditoCliente.facturasVencidas || 0} factura(s) vencida(s)</strong> por ₡{Number(estadoCreditoCliente.deudaActual ?? estadoCreditoCliente.saldoAdeudado ?? 0).toLocaleString('es-CR')}.
                       Política institucional: <strong>Se bloquea tanto venta de contado como a crédito</strong> hasta su liquidación en Facturación.
                     </p>
                   </div>
@@ -1201,20 +1203,20 @@ export default function PosPage({ onNavigateToFacturacion }) {
                       <div>
                         <span className="text-slate-400 block">Facturas Activas:</span>
                         <span className="font-semibold text-white">
-                          {estadoCreditoCliente.facturasCreditoActivas} / {estadoCreditoCliente.limiteCreditoFacturas}
+                          {(estadoCreditoCliente.facturasCreditoActivas ?? estadoCreditoCliente.facturasActivasCredito ?? 0)} / {(estadoCreditoCliente.limiteCreditoFacturas ?? estadoCreditoCliente.limiteFacturas ?? 3)}
                         </span>
                       </div>
                       <div>
                         <span className="text-slate-400 block">Saldo Adeudado:</span>
                         <span className="font-semibold text-white">
-                          ₡{Number(estadoCreditoCliente.deudaActual).toLocaleString('es-CR')} / ₡{Number(estadoCreditoCliente.limiteCreditoMonto).toLocaleString('es-CR')}
+                          ₡{Number(estadoCreditoCliente.deudaActual ?? estadoCreditoCliente.saldoAdeudado ?? 0).toLocaleString('es-CR')} / ₡{Number(estadoCreditoCliente.limiteCreditoMonto ?? 300000).toLocaleString('es-CR')}
                         </span>
                       </div>
                     </div>
                     <div className="text-[10px] text-amber-200 pt-0.5 flex justify-between border-t border-amber-500/20">
                       <span>Crédito Disponible:</span>
                       <span className="font-bold">
-                        ₡{Number(estadoCreditoCliente.saldoCreditoDisponible).toLocaleString('es-CR')}
+                        ₡{Number(estadoCreditoCliente.saldoCreditoDisponible ?? estadoCreditoCliente.creditoDisponible ?? 0).toLocaleString('es-CR')}
                       </span>
                     </div>
                   </div>

@@ -237,3 +237,31 @@
 .animate-cart-flash {
   animation: cartFlashPulse 0.32s ease-out both;
 }
+
+/* ================= ESTILOS DE IMPRESIÓN COMPROBANTE DE COMPRA ================= */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  
+  #comprobante-impresion,
+  #comprobante-impresion * {
+    visibility: visible;
+  }
+  
+  #comprobante-impresion {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    margin: 0;
+    padding: 16px;
+    background: white;
+    box-shadow: none;
+    border: none;
+  }
+  
+  .no-print {
+    display: none !important;
+  }
+}

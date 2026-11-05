@@ -66,6 +66,7 @@ export default function ComprasPage() {
   const [modalRecepcionAbierto, setModalRecepcionAbierto] = useState(false);
   const [compraAAnular, setCompraAAnular] = useState(null);
   const [compraARecepcionar, setCompraARecepcionar] = useState(null);
+  const [fechaRecepcionReal, setFechaRecepcionReal] = useState('');
   const [motivoAnulacion, setMotivoAnulacion] = useState('');
 
   const [modalProveedoresAbierto, setModalProveedoresAbierto] = useState(false);
@@ -318,6 +319,62 @@ export default function ComprasPage() {
   const [costoActual, setCostoActual] = useState('');
   const [guardando, setGuardando] = useState(false);
 
+  // Búsqueda y filtrado de productos en modal de nueva orden
+  const [homologaciones, setHomologaciones] = useState([]);
+  const [busquedaProdModal, setBusquedaProdModal] = useState('');
+  const [filtroSoloHomologados, setFiltroSoloHomologados] = useState(false);
+  const [filtroCategoriaModal, setFiltroCategoriaModal] = useState('TODAS');
+
+  const categoriasProductos = useMemo(() => {
+    const cats = new Set(productos.map((p) => p.Categoria).filter(Boolean));
+    return Array.from(cats);
+  }, [productos]);
+
+  const productosFiltradosModal = useMemo(() => {
+    return productos.filter((p) => {
+      const term = (busquedaProdModal || '').toLowerCase().trim();
+      const coincideBusqueda =
+        !term ||
+        (p.Nombre && p.Nombre.toLowerCase().includes(term)) ||
+        (p.Id_Producto && p.Id_Producto.toString().includes(term)) ||
+        (p.Categoria && p.Categoria.toLowerCase().includes(term));
+
+      const coincideCategoria =
+        filtroCategoriaModal === 'TODAS' || p.Categoria === filtroCategoriaModal;
+
+      const esHomologado = homologaciones.some(
+        (h) => h.Id_Producto === p.Id_Producto && h.Id_Proveedor === proveedorSeleccionadoId,
+      );
+      const coincideProveedor = !filtroSoloHomologados || esHomologado;
+
+      return coincideBusqueda && coincideCategoria && coincideProveedor;
+    });
+  }, [productos, busquedaProdModal, filtroCategoriaModal, filtroSoloHomologados, homologaciones, proveedorSeleccionadoId]);
+
+  const seleccionarProducto = (id) => {
+    const numId = parseInt(id);
+    setProdActualId(numId);
+    const prod = productos.find((p) => p.Id_Producto === numId);
+    if (!prod) return;
+
+    const asoc = homologaciones.find(
+      (h) => h.Id_Producto === numId && h.Id_Proveedor === proveedorSeleccionadoId,
+    );
+    if (asoc && asoc.Precio_Compra) {
+      setCostoActual(Number(asoc.Precio_Compra).toString());
+    } else {
+      setCostoActual(Math.round(prod.Precio_Venta * 0.7).toString());
+    }
+  };
+
+  const abrirNuevaCompra = () => {
+    setLineasCompra([]);
+    setBusquedaProdModal('');
+    setFiltroCategoriaModal('TODAS');
+    setFiltroSoloHomologados(false);
+    setModalNuevaCompraAbierto(true);
+  };
+
   useEffect(() => {
     cargarDatos();
   }, []);
@@ -325,17 +382,19 @@ export default function ComprasPage() {
   const cargarDatos = async () => {
     setLoading(true);
     try {
-      const [resCompras, resProvs, resProds, resSugerencias] = await Promise.all([
+      const [resCompras, resProvs, resProds, resSugerencias, resHomologaciones] = await Promise.all([
         api.get('/compras'),
         api.get('/proveedores/activos'),
         api.get('/productos/inventario'),
         api.get('/compras/reabastecimiento/sugerencias'),
+        api.get('/proveedores/productos-asociados/vista'),
       ]);
 
       setCompras(resCompras.data || []);
       setProveedores(resProvs.data || []);
       setProductos(resProds.data || []);
       setSugerenciasReabastecimiento(resSugerencias.data || []);
+      setHomologaciones(resHomologaciones.data || []);
 
       if (resProvs.data?.length > 0) {
         setProveedorSeleccionadoId(resProvs.data[0].Id_Proveedor);
@@ -553,6 +612,10 @@ export default function ComprasPage() {
   // Confirmar y Recepcionar Mercancía (Ingresa existencias al stock de bodega)
   const abrirRecepcion = (compra) => {
     setCompraARecepcionar(compra);
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    const localNow = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
+    setFechaRecepcionReal(localNow);
     setModalRecepcionAbierto(true);
   };
 
@@ -565,7 +628,9 @@ export default function ComprasPage() {
 
     setGuardando(true);
     try {
-      await api.post(`/compras/${compraARecepcionar.Id_Compra}/confirmar`);
+      await api.post(`/compras/${compraARecepcionar.Id_Compra}/confirmar`, {
+        fechaRecepcion: fechaRecepcionReal ? fechaRecepcionReal.replace('T', ' ') : undefined,
+      });
       showToast(`¡Orden #${compraARecepcionar.Id_Compra} recepcionada y existencias ingresadas a bodega con éxito!`, 'success');
       setModalRecepcionAbierto(false);
       setCompraARecepcionar(null);
@@ -651,10 +716,7 @@ export default function ComprasPage() {
           </button>
 
           <button
-            onClick={() => {
-              setLineasCompra([]);
-              setModalNuevaCompraAbierto(true);
-            }}
+            onClick={abrirNuevaCompra}
             className="flex items-center gap-1.5 px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold rounded-xl shadow-md shadow-teal-600/20 transition"
           >
             <Plus className="w-4 h-4" />
@@ -949,28 +1011,97 @@ export default function ComprasPage() {
 
               {/* Formulario Agregar Producto */}
               <div className="bg-teal-50/50 border border-teal-200 rounded-xl p-4 space-y-3">
-                <h4 className="font-bold text-teal-900 uppercase tracking-wider text-[11px]">
-                  Agregar Artículo a la Orden
-                </h4>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-teal-200/60 pb-2">
+                  <h4 className="font-bold text-teal-900 uppercase tracking-wider text-[11px] flex items-center gap-1.5">
+                    <Package className="w-4 h-4 text-teal-700" />
+                    <span>Agregar Artículo a la Orden</span>
+                  </h4>
+                  <div className="text-[11px] text-teal-800 font-semibold bg-teal-100/70 px-2 py-0.5 rounded-md">
+                    {productosFiltradosModal.length} de {productos.length} producto(s) disponibles
+                  </div>
+                </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
-                  <div className="md:col-span-6">
-                    <label className="block font-medium text-slate-600 mb-1">Producto</label>
+                {/* Barra de Búsqueda y Filtros de Productos */}
+                <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 bg-white/80 p-2.5 rounded-xl border border-teal-200/80 shadow-xs">
+                  {/* Buscador de texto con icono */}
+                  <div className="sm:col-span-6 relative">
+                    <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      value={busquedaProdModal}
+                      onChange={(e) => setBusquedaProdModal(e.target.value)}
+                      placeholder="Buscar producto por nombre o ID..."
+                      className="w-full pl-8 pr-7 py-1.5 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 font-medium"
+                    />
+                    {busquedaProdModal && (
+                      <button
+                        type="button"
+                        onClick={() => setBusquedaProdModal('')}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
+                        title="Limpiar búsqueda"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Filtro por Categoría */}
+                  <div className="sm:col-span-3">
                     <select
-                      value={prodActualId}
-                      onChange={(e) => {
-                        const id = parseInt(e.target.value);
-                        setProdActualId(id);
-                        const prod = productos.find((p) => p.Id_Producto === id);
-                        if (prod) setCostoActual(Math.round(prod.Precio_Venta * 0.7).toString());
-                      }}
-                      className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs"
+                      value={filtroCategoriaModal}
+                      onChange={(e) => setFiltroCategoriaModal(e.target.value)}
+                      className="w-full px-2 py-1.5 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 text-slate-700 font-medium"
                     >
-                      {productos.map((p) => (
-                        <option key={p.Id_Producto} value={p.Id_Producto}>
-                          {p.Nombre} (Stock: {p.Stock_Actual})
+                      <option value="TODAS">Todas las categorías</option>
+                      {categoriasProductos.map((cat) => (
+                        <option key={cat} value={cat}>
+                          {cat}
                         </option>
                       ))}
+                    </select>
+                  </div>
+
+                  {/* Checkbox para filtrar solo por el proveedor seleccionado */}
+                  <div className="sm:col-span-3 flex items-center pl-1">
+                    <label className="flex items-center gap-1.5 cursor-pointer text-xs font-semibold text-teal-900 select-none">
+                      <input
+                        type="checkbox"
+                        checked={filtroSoloHomologados}
+                        onChange={(e) => setFiltroSoloHomologados(e.target.checked)}
+                        className="rounded border-slate-300 text-teal-600 focus:ring-teal-500 cursor-pointer"
+                      />
+                      <span>Solo de este proveedor</span>
+                    </label>
+                  </div>
+                </div>
+
+                {/* Fila de Selección de Producto, Cantidad, Costo y Acción */}
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+                  <div className="md:col-span-6">
+                    <label className="block font-medium text-slate-600 mb-1">
+                      Producto {productosFiltradosModal.length === 0 && <span className="text-rose-600 font-bold text-[11px]">(Sin coincidencias)</span>}
+                    </label>
+                    <select
+                      value={prodActualId}
+                      onChange={(e) => seleccionarProducto(e.target.value)}
+                      disabled={productosFiltradosModal.length === 0}
+                      className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-teal-500 disabled:bg-slate-100 disabled:text-slate-400"
+                    >
+                      {productosFiltradosModal.length === 0 ? (
+                        <option value="">No hay productos con los filtros aplicados</option>
+                      ) : (
+                        productosFiltradosModal.map((p) => {
+                          const asoc = homologaciones.find(
+                            (h) => h.Id_Producto === p.Id_Producto && h.Id_Proveedor === proveedorSeleccionadoId,
+                          );
+                          const esBajoReorden = p.Stock_Actual <= p.Punto_Reorden;
+                          return (
+                            <option key={p.Id_Producto} value={p.Id_Producto}>
+                              {p.Nombre} (Stock: {p.Stock_Actual}) {esBajoReorden ? '⚠️ Bajo Reorden' : ''} {asoc ? '⭐ Pactado' : ''}
+                            </option>
+                          );
+                        })
+                      )}
                     </select>
                   </div>
 
@@ -986,7 +1117,16 @@ export default function ComprasPage() {
                   </div>
 
                   <div className="md:col-span-3">
-                    <label className="block font-medium text-slate-600 mb-1">Costo Unitario (CRC)</label>
+                    <div className="flex justify-between items-center mb-1">
+                      <label className="font-medium text-slate-600">Costo Unit. (CRC)</label>
+                      {homologaciones.some(
+                        (h) => h.Id_Producto === parseInt(prodActualId) && h.Id_Proveedor === proveedorSeleccionadoId,
+                      ) ? (
+                        <span className="text-[10px] text-emerald-700 font-bold bg-emerald-100 px-1 rounded">⭐ Pactado</span>
+                      ) : (
+                        <span className="text-[10px] text-slate-400">70% PVP</span>
+                      )}
+                    </div>
                     <input
                       type="number"
                       value={costoActual}
@@ -1000,8 +1140,9 @@ export default function ComprasPage() {
                     <button
                       type="button"
                       onClick={agregarLinea}
-                      className="w-full py-1.5 bg-teal-600 hover:bg-teal-700 text-white rounded-lg flex items-center justify-center"
-                      title="Agregar línea"
+                      disabled={productosFiltradosModal.length === 0}
+                      className="w-full py-1.5 bg-teal-600 hover:bg-teal-700 disabled:opacity-50 text-white rounded-lg flex items-center justify-center shadow-sm font-bold transition"
+                      title="Agregar producto a la orden"
                     >
                       <Plus className="w-4 h-4" />
                     </button>
@@ -1087,109 +1228,337 @@ export default function ComprasPage() {
         </div>
       )}
 
-      {/* ================= MODAL DETALLE DE COMPRA ================= */}
-      {modalDetalleAbierto && createPortal(
-        <div className="modal-impresion-activa fixed inset-0 z-50 flex items-center justify-center bg-[#132B20]/60 backdrop-blur-sm p-4 overflow-y-auto" onClick={(e) => { if (e.target === e.currentTarget) setModalDetalleAbierto(false); }}>
-          <div className="bg-white rounded-2xl max-w-xl w-full max-h-[85vh] shadow-2xl border border-[#DFD5C4] overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-150">
-            <div className="bg-[#132B20] text-white p-5 flex items-center justify-between">
-              <div>
-                <h3 className="font-bold text-base flex items-center gap-2">
+      {/* ================= MODAL DETALLE DE COMPRA / COMPROBANTE OFICIAL ================= */}
+      {modalDetalleAbierto && compraSeleccionada && createPortal((() => {
+        const prov = compraSeleccionada?.proveedorInfo || {};
+        const log = compraSeleccionada?.logistica || {};
+        const leadTimePactado = prov.Lead_Time_Pactado_Dias || (compraSeleccionada?.Id_Proveedor === 2 ? 7 : 3);
+
+        const fechaDespacho = compraSeleccionada?.Fecha_Compra ? new Date(compraSeleccionada.Fecha_Compra) : null;
+
+        let fechaPrometida = log.Fecha_Prometida ? new Date(log.Fecha_Prometida) : null;
+        if (!fechaPrometida && fechaDespacho) {
+          fechaPrometida = new Date(fechaDespacho.getTime() + leadTimePactado * 24 * 60 * 60 * 1000);
+        }
+
+        const fechaRecepcion = log.Fecha_Recepcion_Real ? new Date(log.Fecha_Recepcion_Real) : null;
+
+        let diasDiferencia = (log.Dias_Tardanza_Entrega !== undefined && log.Dias_Tardanza_Entrega !== null)
+          ? log.Dias_Tardanza_Entrega
+          : null;
+        if (diasDiferencia === null && fechaRecepcion && fechaPrometida) {
+          const dProm = new Date(fechaPrometida.getFullYear(), fechaPrometida.getMonth(), fechaPrometida.getDate());
+          const dRec = new Date(fechaRecepcion.getFullYear(), fechaRecepcion.getMonth(), fechaRecepcion.getDate());
+          diasDiferencia = Math.round((dRec - dProm) / (1000 * 60 * 60 * 24));
+        }
+
+        return (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-[#132B20]/65 backdrop-blur-sm p-4 overflow-y-auto"
+            onClick={(e) => { if (e.target === e.currentTarget) setModalDetalleAbierto(false); }}
+          >
+            <div className="bg-white rounded-2xl max-w-3xl w-full my-auto shadow-2xl border border-[#DFD5C4] overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-150">
+              {/* Barra superior de control (no imprimible) */}
+              <div className="bg-[#132B20] text-white p-4 flex items-center justify-between no-print">
+                <div className="flex items-center gap-2">
                   <Truck className="w-5 h-5 text-teal-400" />
-                  Orden de Compra OC-{compraSeleccionada?.Id_Compra?.toString().padStart(8, '0')}
-                </h3>
-                <p className="text-xs text-slate-400 mt-0.5">
-                  Proveedor: {compraSeleccionada?.Proveedor}
-                </p>
-              </div>
-              <button
-                onClick={() => setModalDetalleAbierto(false)}
-                className="p-1 text-slate-400 hover:text-white rounded-lg transition no-print"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="p-6 overflow-y-auto space-y-4 flex-1 text-xs">
-              {cargandoDetalle ? (
-                <div className="py-8 text-center">
-                  <RefreshCw className="w-6 h-6 text-teal-600 animate-spin mx-auto mb-2" />
-                  <p className="text-[#5C3622]">Cargando detalles de orden...</p>
+                  <span className="font-bold text-sm">
+                    Comprobante Oficial • Orden OC-{compraSeleccionada?.Id_Compra?.toString().padStart(8, '0')}
+                  </span>
                 </div>
-              ) : (
-                <>
-                  <div className="bg-[#FAF7F0] border border-[#DFD5C4] rounded-xl p-3 grid grid-cols-2 gap-3">
-                    <div>
-                      <span className="text-slate-400 font-medium block">Fecha:</span>
-                      <span className="font-bold text-slate-800">
-                        {new Date(compraSeleccionada?.Fecha_Compra).toLocaleString('es-CR')}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-slate-400 font-medium block">Estado Actual:</span>
-                      <span className="font-bold text-slate-800">{compraSeleccionada?.Estado_Compra}</span>
-                    </div>
-                  </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => window.print()}
+                    className="flex items-center gap-1.5 px-3.5 py-1.5 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-xs font-bold transition shadow-sm"
+                  >
+                    <Printer className="w-4 h-4" />
+                    <span>Imprimir Comprobante</span>
+                  </button>
+                  <button
+                    onClick={() => setModalDetalleAbierto(false)}
+                    className="p-1.5 text-slate-300 hover:text-white rounded-lg hover:bg-white/10 transition"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+              </div>
 
-                  <div>
-                    <h4 className="font-bold text-slate-800 uppercase tracking-wider text-[11px] mb-2">
-                      Productos Adquiridos
-                    </h4>
-                    <div className="border border-[#DFD5C4] rounded-xl overflow-hidden">
-                      <table className="w-full text-left text-xs">
-                        <thead className="bg-[#FAF7F0] text-[#5C3622] font-bold border-b border-[#DFD5C4]">
-                          <tr>
-                            <th className="py-2 px-3">Producto</th>
-                            <th className="py-2 px-3 text-center">Cantidad</th>
-                            <th className="py-2 px-3 text-right">Costo Unit.</th>
-                            <th className="py-2 px-3 text-right">Subtotal</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                          {compraSeleccionada?.productos?.map((p) => (
-                            <tr key={p.Id_Compra_Producto}>
-                              <td className="py-2 px-3 font-semibold text-slate-800">{p.Producto}</td>
-                              <td className="py-2 px-3 text-center font-bold">{p.Cantidad}</td>
-                              <td className="py-2 px-3 text-right">₡{Number(p.Costo_Unitario).toLocaleString('es-CR')}</td>
-                              <td className="py-2 px-3 text-right font-black">
-                                ₡{Number(p.Subtotal).toLocaleString('es-CR')}
-                              </td>
+              {/* Contenedor del Comprobante (Imprimible y visual) */}
+              <div id="comprobante-impresion" className="p-6 md:p-8 space-y-4 bg-white text-slate-800 text-xs">
+                {cargandoDetalle ? (
+                  <div className="py-12 text-center">
+                    <RefreshCw className="w-7 h-7 text-teal-600 animate-spin mx-auto mb-2" />
+                    <p className="text-slate-600 font-semibold">Cargando datos completos del comprobante...</p>
+                  </div>
+                ) : (
+                  <>
+                    {/* Encabezado Corporativo Oficial */}
+                    <div className="border-b-2 border-slate-800 pb-3 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="px-2 py-1 bg-[#132B20] text-white rounded-lg font-black text-xs">ME</span>
+                          <div>
+                            <h2 className="text-sm font-black text-[#132B20] uppercase tracking-wide">
+                              Librería & Papelería Mundo Escolar
+                            </h2>
+                            <p className="text-[10.5px] text-slate-500 font-medium">
+                              Cédula Jurídica: 3-101-778899 • Sucursal Central • Alajuela, Costa Rica
+                            </p>
+                          </div>
+                        </div>
+                        <p className="text-[10px] text-slate-400 mt-1">
+                          Tel: +506 2440-1234 • Email: compras@mundoescolar.cr • Sistema Integral de Abastecimiento
+                        </p>
+                      </div>
+
+                      <div className="text-left sm:text-right bg-[#FAF7F0] p-2.5 rounded-xl border border-[#DFD5C4] min-w-[210px]">
+                        <span className="text-[9.5px] uppercase tracking-wider font-extrabold text-[#5C3622] block">
+                          Comprobante Oficial de Compra
+                        </span>
+                        <span className="font-mono font-black text-base text-[#132B20] block mt-0.5">
+                          OC-{compraSeleccionada?.Id_Compra?.toString().padStart(8, '0')}
+                        </span>
+                        <div className="mt-1">
+                          <span className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                            compraSeleccionada?.Estado_Compra === 'Recibida'
+                              ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                              : compraSeleccionada?.Estado_Compra === 'Anulada'
+                              ? 'bg-rose-100 text-rose-800 border border-rose-300'
+                              : 'bg-amber-100 text-amber-800 border border-amber-300'
+                          }`}>
+                            {compraSeleccionada?.Estado_Compra === 'Recibida' ? '● Recibida en Bodega' : compraSeleccionada?.Estado_Compra === 'Pendiente' ? '⏳ Pendiente de Recepción' : '✕ Anulada'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Fila Informativa: Proveedor y Emisión */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {/* Tarjeta Proveedor */}
+                      <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-1">
+                        <div className="flex items-center gap-1.5 text-teal-800 font-bold uppercase tracking-wider text-[10px] border-b border-slate-200 pb-1">
+                          <Building className="w-3.5 h-3.5" />
+                          <span>Información del Proveedor</span>
+                        </div>
+                        <p className="text-xs font-black text-slate-900 pt-0.5">
+                          {prov.Nombre_O_RazonSocial || compraSeleccionada?.Proveedor || 'Proveedor Homologado'}
+                        </p>
+                        <div className="text-[11px] text-slate-600 space-y-0.5">
+                          <p><strong className="font-semibold text-slate-700">Identificación:</strong> {prov.Numero_Identificacion || 'N/D'} ({prov.Tipo_Proveedor || compraSeleccionada?.Tipo_Proveedor || 'Comercial'})</p>
+                          {prov.Telefono_Contacto && <p><strong className="font-semibold text-slate-700">Teléfono:</strong> {prov.Telefono_Contacto}</p>}
+                          {prov.Correo_Contacto && <p><strong className="font-semibold text-slate-700">Correo:</strong> {prov.Correo_Contacto}</p>}
+                          {prov.Direccion && <p><strong className="font-semibold text-slate-700">Ubicación:</strong> {prov.Direccion}</p>}
+                        </div>
+                      </div>
+
+                      {/* Tarjeta Emisión y Responsable */}
+                      <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-1">
+                        <div className="flex items-center gap-1.5 text-teal-800 font-bold uppercase tracking-wider text-[10px] border-b border-slate-200 pb-1">
+                          <User className="w-3.5 h-3.5" />
+                          <span>Control de Emisión & Bodega</span>
+                        </div>
+                        <div className="text-[11px] text-slate-600 space-y-1 pt-0.5">
+                          <p><strong className="font-semibold text-slate-700">Responsable de Emisión:</strong> {compraSeleccionada?.Responsable || 'admin'} (Administración)</p>
+                          <p><strong className="font-semibold text-slate-700">Tipo de Proceso:</strong> Orden de Compra Directa</p>
+                          <p><strong className="font-semibold text-slate-700">Almacén Destino:</strong> Bodega Central Mundo Escolar</p>
+                          <p><strong className="font-semibold text-slate-700">Asiento Contable:</strong> {compraSeleccionada?.Estado_Compra === 'Recibida' ? 'Registrado en Libro Kárdex (Entrada por Compra)' : 'Pendiente de Ingreso Físico'}</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* BLOQUE DESTACADO: CRONOGRAMA LOGÍSTICO, DURACIÓN ESTIPULADA Y CUMPLIMIENTO */}
+                    <div className="bg-[#FAF7F0] border border-[#DFD5C4] rounded-xl p-3.5 space-y-2.5">
+                      <div className="flex items-center justify-between border-b border-[#DFD5C4] pb-1.5">
+                        <div className="flex items-center gap-1.5 text-[#5C3622] font-black uppercase tracking-wider text-[10.5px]">
+                          <Clock className="w-3.5 h-3.5 text-[#5C3622]" />
+                          <span>Cronograma Logístico & Duración de Entrega</span>
+                        </div>
+                        <span className="text-[10px] font-bold text-slate-600 bg-white px-2 py-0.5 rounded border border-[#DFD5C4]">
+                          Lead Time Pactado: {leadTimePactado} días
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
+                        <div className="bg-white p-2 rounded-lg border border-[#DFD5C4]">
+                          <span className="text-[9.5px] font-bold text-slate-400 block uppercase">1. Fecha Despacho / Orden</span>
+                          <span className="font-black text-slate-800 text-[11px] mt-0.5 block">
+                            {fechaDespacho ? fechaDespacho.toLocaleDateString('es-CR') : 'N/D'}
+                          </span>
+                          <span className="text-[9px] text-slate-500 block">
+                            {fechaDespacho ? fechaDespacho.toLocaleTimeString('es-CR', { hour: '2-digit', minute: '2-digit' }) : ''}
+                          </span>
+                        </div>
+
+                        <div className="bg-white p-2 rounded-lg border border-[#DFD5C4]">
+                          <span className="text-[9.5px] font-bold text-slate-400 block uppercase">2. Plazo Estipulado</span>
+                          <span className="font-black text-teal-800 text-[11px] mt-0.5 block">
+                            {leadTimePactado} Días
+                          </span>
+                          <span className="text-[9px] text-slate-500 block">Duración convenida</span>
+                        </div>
+
+                        <div className="bg-white p-2 rounded-lg border border-[#DFD5C4]">
+                          <span className="text-[9.5px] font-bold text-slate-400 block uppercase">3. Fecha Prometida</span>
+                          <span className="font-black text-slate-800 text-[11px] mt-0.5 block">
+                            {fechaPrometida ? fechaPrometida.toLocaleDateString('es-CR') : 'N/D'}
+                          </span>
+                          <span className="text-[9px] text-slate-500 block">Límite según Lead Time</span>
+                        </div>
+
+                        <div className="bg-white p-2 rounded-lg border border-[#DFD5C4]">
+                          <span className="text-[9.5px] font-bold text-slate-400 block uppercase">4. Fecha Recepción Real</span>
+                          <span className="font-black text-[#132B20] text-[11px] mt-0.5 block">
+                            {fechaRecepcion ? fechaRecepcion.toLocaleDateString('es-CR') : (compraSeleccionada?.Estado_Compra === 'Recibida' ? 'Confirmada' : 'Pendiente')}
+                          </span>
+                          <span className="text-[9px] text-slate-500 block">
+                            {fechaRecepcion ? fechaRecepcion.toLocaleTimeString('es-CR', { hour: '2-digit', minute: '2-digit' }) : 'Arribo a bodega'}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Dictamen de Evaluación de Entrega */}
+                      {compraSeleccionada?.Estado_Compra === 'Recibida' ? (
+                        <div className={`p-2.5 rounded-lg border flex items-center gap-2 ${
+                          diasDiferencia > 0 
+                            ? 'bg-rose-50 border-rose-200 text-rose-900' 
+                            : diasDiferencia < 0
+                            ? 'bg-sky-50 border-sky-200 text-sky-900'
+                            : 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                        }`}>
+                          {diasDiferencia > 0 ? (
+                            <>
+                              <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                              <div>
+                                <span className="font-black text-xs">⚠️ Entrega con Retraso (+{diasDiferencia} día{diasDiferencia > 1 ? 's' : ''}): </span>
+                                <span className="text-[11px]">La mercadería arribó {diasDiferencia} día(s) posterior a la fecha prometida. Registrado en auditoría dw.FactCompras.</span>
+                              </div>
+                            </>
+                          ) : diasDiferencia < 0 ? (
+                            <>
+                              <CheckCircle2 className="w-4 h-4 text-sky-600 shrink-0" />
+                              <div>
+                                <span className="font-black text-xs">⚡ Entrega Anticipada ({Math.abs(diasDiferencia)} día{Math.abs(diasDiferencia) > 1 ? 's' : ''} de adelanto): </span>
+                                <span className="text-[11px]">El proveedor entregó antes del plazo estipulado ({leadTimePactado} días). Desempeño óptimo registrado en dw.FactCompras.</span>
+                              </div>
+                            </>
+                          ) : (
+                            <>
+                              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                              <div>
+                                <span className="font-black text-xs">✅ Entrega Justo a Tiempo (0 días de demora): </span>
+                                <span className="text-[11px]">Cumplimiento exacto al 100% con los días estipulados de duración de entrega.</span>
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="p-2 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-[11px] flex items-center gap-2">
+                          <Clock className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                          <span>
+                            <strong>Orden en tránsito:</strong> Plazo estipulado de <strong>{leadTimePactado} días</strong> para entrega en bodega antes del <strong>{fechaPrometida?.toLocaleDateString('es-CR')}</strong>.
+                          </span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Tabla de Productos Adquiridos */}
+                    <div className="space-y-1.5">
+                      <h4 className="font-black text-slate-800 uppercase tracking-wider text-[10.5px]">
+                        Detalle de Mercancía Adquirida
+                      </h4>
+                      <div className="border border-slate-300 rounded-xl overflow-hidden">
+                        <table className="w-full text-left text-xs">
+                          <thead className="bg-[#FAF7F0] text-[#5C3622] font-black border-b border-slate-300">
+                            <tr>
+                              <th className="py-2 px-3 w-8 text-center">#</th>
+                              <th className="py-2 px-3">Producto / Descripción</th>
+                              <th className="py-2 px-3">Categoría</th>
+                              <th className="py-2 px-3 text-center">Cantidad</th>
+                              <th className="py-2 px-3 text-right">Costo Unit.</th>
+                              <th className="py-2 px-3 text-right">Subtotal</th>
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                          </thead>
+                          <tbody className="divide-y divide-slate-200">
+                            {(compraSeleccionada?.detalles || compraSeleccionada?.productos || []).map((p, idx) => (
+                              <tr key={p.Id_Compra_Producto || idx} className="hover:bg-slate-50">
+                                <td className="py-2 px-3 text-center font-mono text-slate-400 font-bold">{idx + 1}</td>
+                                <td className="py-2 px-3 font-bold text-slate-900">{p.Producto || p.Nombre_Producto}</td>
+                                <td className="py-2 px-3 text-slate-500 text-[11px]">{p.Categoria || 'Escolar'}</td>
+                                <td className="py-2 px-3 text-center font-black text-slate-800">{p.Cantidad}</td>
+                                <td className="py-2 px-3 text-right font-medium text-slate-700">₡{Number(p.Costo_Unitario || p.Precio_Unitario || 0).toLocaleString('es-CR')}</td>
+                                <td className="py-2 px-3 text-right font-black text-slate-900">₡{Number(p.Subtotal || 0).toLocaleString('es-CR')}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
                     </div>
-                  </div>
 
-                  <div className="bg-[#FAF7F0] border border-[#DFD5C4] rounded-xl p-3 flex justify-between items-center text-sm">
-                    <span className="font-bold text-[#132B20]">Monto Total de Compra:</span>
-                    <span className="font-black text-teal-700 text-base">
-                      ₡{Number(compraSeleccionada?.Monto_Total || 0).toLocaleString('es-CR')}
-                    </span>
-                  </div>
-                </>
-              )}
-            </div>
+                    {/* Resumen de Liquidación y Totales */}
+                    <div className="bg-[#FAF7F0] border border-[#DFD5C4] rounded-xl p-3 flex flex-col sm:flex-row justify-between items-center gap-2">
+                      <div className="text-[11px] text-[#5C3622] font-medium">
+                        <span>Total Artículos: <strong className="font-bold text-slate-800">{compraSeleccionada?.Total_Articulos || (compraSeleccionada?.detalles || compraSeleccionada?.productos || []).reduce((a, c) => a + Number(c.Cantidad || 0), 0)} unidades</strong></span>
+                        <span className="mx-2">•</span>
+                        <span>Moneda: <strong className="font-bold text-slate-800">Colones Costarricenses (CRC - ₡)</strong></span>
+                      </div>
 
-            <div className="p-4 bg-[#FAF7F0] border-t border-[#DFD5C4] flex items-center justify-between no-print">
-              <button
-                onClick={() => window.print()}
-                className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-[#132B20] bg-white border border-[#DFD5C4] rounded-xl hover:bg-slate-100 transition"
-              >
-                <Printer className="w-4 h-4" />
-                <span>Imprimir Comprobante</span>
-              </button>
+                      <div className="flex items-center gap-3 text-sm">
+                        <span className="font-bold text-[#132B20]">Monto Total de Compra:</span>
+                        <span className="font-black text-teal-800 text-base">
+                          ₡{Number(compraSeleccionada?.Monto_Total || 0).toLocaleString('es-CR')}
+                        </span>
+                      </div>
+                    </div>
 
-              <button
-                onClick={() => setModalDetalleAbierto(false)}
-                className="px-4 py-2 bg-[#132B20] text-white text-xs font-bold rounded-xl hover:bg-[#1A3D2F] transition"
-              >
-                Cerrar
-              </button>
+                    {/* Sección de Firmas y Certificación de Entrada a Bodega */}
+                    <div className="pt-3 border-t border-slate-200 grid grid-cols-2 gap-8 text-center text-[10.5px]">
+                      <div>
+                        <div className="border-b border-slate-400 pb-1 mb-1 h-10 flex items-end justify-center text-slate-600 font-serif italic text-xs">
+                          {compraSeleccionada?.Responsable || 'Admin'}
+                        </div>
+                        <p className="font-bold text-slate-800">Emitido por Compras / Administración</p>
+                        <p className="text-slate-400 text-[9.5px]">Librería & Papelería Mundo Escolar</p>
+                      </div>
+
+                      <div>
+                        <div className="border-b border-slate-400 pb-1 mb-1 h-10 flex items-end justify-center text-slate-600 font-serif italic text-xs">
+                          {compraSeleccionada?.Estado_Compra === 'Recibida' ? 'Recibido Conforme en Almacén' : '________________________'}
+                        </div>
+                        <p className="font-bold text-slate-800">Recibido e Ingresado a Bodega</p>
+                        <p className="text-slate-400 text-[9.5px]">Firma & Sello de Bodeguero</p>
+                      </div>
+                    </div>
+
+                    <p className="text-[9.5px] text-slate-400 text-center italic pt-0.5">
+                      Comprobante interno oficial emitido conforme a las políticas de abastecimiento y control de inventarios de Mundo Escolar.
+                    </p>
+                  </>
+                )}
+              </div>
+
+              {/* Barra inferior de acciones (no imprimible) */}
+              <div className="p-4 bg-[#FAF7F0] border-t border-[#DFD5C4] flex items-center justify-between no-print">
+                <button
+                  onClick={() => window.print()}
+                  className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-teal-700 hover:bg-teal-800 rounded-xl transition shadow-sm"
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>Imprimir Comprobante Oficial</span>
+                </button>
+
+                <button
+                  onClick={() => setModalDetalleAbierto(false)}
+                  className="px-5 py-2 bg-[#132B20] text-white text-xs font-bold rounded-xl hover:bg-[#1A3D2F] transition shadow-sm"
+                >
+                  Cerrar
+                </button>
+              </div>
             </div>
           </div>
-        </div>,
-        document.body
-      )}
+        );
+      })(),
+      document.body
+    )}
 
       {/* ================= MODAL ANULACIÓN DE COMPRA ================= */}
       {modalAnulacionAbierto && compraAAnular && (
@@ -1251,76 +1620,155 @@ export default function ComprasPage() {
       )}
 
             {/* ================= MODAL CONFIRMACIÓN DE RECEPCIÓN ================= */}
-      {modalRecepcionAbierto && compraARecepcionar && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#132B20]/60 backdrop-blur-sm p-4 animate-in fade-in duration-150">
-          <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl border border-[#DFD5C4] overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-            <div className="bg-[#132B20] text-white p-5 flex items-center justify-between">
-              <div>
-                <h3 className="font-bold text-base flex items-center gap-2">
-                  <CheckCircle2 className="w-5 h-5 text-emerald-400" />
-                  Confirmar Recepción de Compra
-                </h3>
-                <p className="text-xs text-emerald-100 mt-0.5">
-                  OC-{compraARecepcionar.Id_Compra.toString().padStart(8, '0')} • {compraARecepcionar.Nombre_Proveedor}
-                </p>
-              </div>
-              <button
-                onClick={() => {
-                  setModalRecepcionAbierto(false);
-                  setCompraARecepcionar(null);
-                }}
-                className="p-1 text-emerald-200 hover:text-white rounded-lg transition"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
+      {modalRecepcionAbierto && compraARecepcionar && (() => {
+        const leadTimePactado = compraARecepcionar.Id_Proveedor === 2 ? 7 : (compraARecepcionar.Id_Proveedor === 1 || compraARecepcionar.Id_Proveedor === 3 ? 3 : 5);
+        const fechaOrden = new Date(compraARecepcionar.Fecha_Compra);
+        const fechaPrometida = new Date(fechaOrden.getTime() + leadTimePactado * 24 * 60 * 60 * 1000);
+        const fechaRecibida = fechaRecepcionReal ? new Date(fechaRecepcionReal) : new Date();
 
-            <div className="p-6 space-y-4 text-xs">
-              <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 leading-relaxed font-medium">
-                ¿Desea confirmar la recepción de la <strong className="font-bold">Orden #{compraARecepcionar.Id_Compra}</strong>?
-                Al confirmar, el sistema incrementará automáticamente el inventario físico en bodega y registrará los movimientos contables en Kárdex.
+        const dProm = new Date(fechaPrometida.getFullYear(), fechaPrometida.getMonth(), fechaPrometida.getDate());
+        const dRec = new Date(fechaRecibida.getFullYear(), fechaRecibida.getMonth(), fechaRecibida.getDate());
+        const diasDiferencia = Math.round((dRec - dProm) / (1000 * 60 * 60 * 24));
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#132B20]/60 backdrop-blur-sm p-4 animate-in fade-in duration-150">
+            <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl border border-[#DFD5C4] overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+              <div className="bg-[#132B20] text-white p-5 flex items-center justify-between">
+                <div>
+                  <h3 className="font-bold text-base flex items-center gap-2">
+                    <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+                    Confirmar Recepción de Compra
+                  </h3>
+                  <p className="text-xs text-emerald-100 mt-0.5">
+                    OC-{compraARecepcionar.Id_Compra.toString().padStart(8, '0')} • {compraARecepcionar.Nombre_Proveedor || compraARecepcionar.Proveedor}
+                  </p>
+                </div>
+                <button
+                  onClick={() => {
+                    setModalRecepcionAbierto(false);
+                    setCompraARecepcionar(null);
+                  }}
+                  className="p-1 text-emerald-200 hover:text-white rounded-lg transition"
+                >
+                  <X className="w-5 h-5" />
+                </button>
               </div>
 
-              <div className="bg-[#FAF7F0] border border-[#DFD5C4] rounded-xl p-3.5 flex justify-between items-center text-xs">
-                <span className="text-[#5C3622] font-semibold">Total de la Orden:</span>
-                <span className="font-black text-[#132B20] text-sm">
-                  ₡{Number(compraARecepcionar.Total || 0).toLocaleString('es-CR')}
-                </span>
-              </div>
-            </div>
+              <div className="p-6 space-y-4 text-xs">
+                <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 leading-relaxed font-medium">
+                  ¿Desea confirmar la recepción de la <strong className="font-bold">Orden #{compraARecepcionar.Id_Compra}</strong>?
+                  Al confirmar, el sistema incrementará automáticamente el inventario físico en bodega y registrará los movimientos contables en Kárdex.
+                </div>
 
-            <div className="p-4 bg-[#FAF7F0] border-t border-[#DFD5C4] flex items-center justify-end gap-2">
-              <button
-                onClick={() => {
-                  setModalRecepcionAbierto(false);
-                  setCompraARecepcionar(null);
-                }}
-                disabled={guardando}
-                className="px-4 py-2 text-slate-600 hover:bg-slate-200 rounded-xl font-semibold transition"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={procesarRecepcion}
-                disabled={guardando}
-                className="px-5 py-2 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-xl shadow-md transition disabled:opacity-50 flex items-center gap-1.5"
-              >
-                {guardando ? (
-                  <>
-                    <RefreshCw className="w-4 h-4 animate-spin" />
-                    <span>Confirmando...</span>
-                  </>
-                ) : (
-                  <>
-                    <CheckCircle2 className="w-4 h-4" />
-                    <span>Confirmar Ingreso a Bodega</span>
-                  </>
-                )}
-              </button>
+                <div className="bg-[#FAF7F0] border border-[#DFD5C4] rounded-xl p-3.5 space-y-2">
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-[#5C3622] font-semibold">Proveedor:</span>
+                    <span className="font-bold text-slate-800">{compraARecepcionar.Nombre_Proveedor || compraARecepcionar.Proveedor}</span>
+                  </div>
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-[#5C3622] font-semibold">Artículos a Ingresar:</span>
+                    <span className="font-bold text-slate-800">{compraARecepcionar.Total_Articulos || compraARecepcionar.Articulos || 0} unidades</span>
+                  </div>
+                  <div className="flex justify-between items-center text-xs pt-1 border-t border-[#DFD5C4]">
+                    <span className="text-[#5C3622] font-semibold">Total de la Orden:</span>
+                    <span className="font-black text-[#132B20] text-sm">
+                      ₡{Number(compraARecepcionar.Monto_Total ?? compraARecepcionar.Total ?? 0).toLocaleString('es-CR')}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Control de Fechas, Lead Time y Cumplimiento de Entrega */}
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-3">
+                  <div className="flex items-center justify-between text-[11px] text-slate-600 font-semibold border-b border-slate-200 pb-2">
+                    <span>Emisión: {fechaOrden.toLocaleDateString('es-CR')}</span>
+                    <span className="bg-white px-2 py-0.5 rounded border border-slate-200 font-bold text-teal-800">
+                      Plazo: {leadTimePactado} días
+                    </span>
+                    <span>Prometida: {fechaPrometida.toLocaleDateString('es-CR')}</span>
+                  </div>
+
+                  <div>
+                    <label className="block text-slate-700 font-bold mb-1">
+                      Fecha y Hora Real de Recepción en Bodega:
+                    </label>
+                    <input
+                      type="datetime-local"
+                      value={fechaRecepcionReal}
+                      onChange={(e) => setFechaRecepcionReal(e.target.value)}
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white"
+                    />
+                  </div>
+
+                  {/* Diagnóstico en vivo de retraso / adelanto */}
+                  <div className={`p-2.5 rounded-lg border text-xs flex items-center gap-2 ${
+                    diasDiferencia > 0 
+                      ? 'bg-rose-50 border-rose-200 text-rose-800' 
+                      : diasDiferencia < 0
+                      ? 'bg-sky-50 border-sky-200 text-sky-800'
+                      : 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                  }`}>
+                    {diasDiferencia > 0 ? (
+                      <>
+                        <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                        <div>
+                          <strong className="font-bold">⚠️ Entrega con Retraso (+{diasDiferencia} día{diasDiferencia > 1 ? 's' : ''}):</strong>
+                          <p className="text-[11px] text-rose-700">Se registrará en el Data Warehouse (dw.FactCompras) y afectará el Scorecard de Proveedores.</p>
+                        </div>
+                      </>
+                    ) : diasDiferencia < 0 ? (
+                      <>
+                        <CheckCircle2 className="w-4 h-4 text-sky-600 shrink-0" />
+                        <div>
+                          <strong className="font-bold">⚡ Entrega Anticipada ({Math.abs(diasDiferencia)} día{Math.abs(diasDiferencia) > 1 ? 's' : ''} de adelanto):</strong>
+                          <p className="text-[11px] text-sky-700">La mercancía llegó antes de la fecha pactada. Desempeño óptimo.</p>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                        <div>
+                          <strong className="font-bold">✅ Entrega Justo a Tiempo (0 días de retraso):</strong>
+                          <p className="text-[11px] text-emerald-700">Cumplimiento del 100% con el Lead Time pactado.</p>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-4 bg-[#FAF7F0] border-t border-[#DFD5C4] flex items-center justify-end gap-2">
+                <button
+                  onClick={() => {
+                    setModalRecepcionAbierto(false);
+                    setCompraARecepcionar(null);
+                  }}
+                  disabled={guardando}
+                  className="px-4 py-2 text-slate-600 hover:bg-slate-200 rounded-xl font-semibold transition"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={procesarRecepcion}
+                  disabled={guardando}
+                  className="px-5 py-2 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-xl shadow-md transition disabled:opacity-50 flex items-center gap-1.5"
+                >
+                  {guardando ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      <span>Confirmando...</span>
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>Confirmar Ingreso a Bodega</span>
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* ================= MODAL DIRECTORIO Y GESTIÓN DE PROVEEDORES ================= */}
       {modalProveedoresAbierto && (

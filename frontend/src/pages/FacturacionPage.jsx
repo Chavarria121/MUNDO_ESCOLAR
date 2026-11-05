@@ -78,6 +78,17 @@ export default function FacturacionPage({ onNavigateToPos }) {
   const [motivoAnulacion, setMotivoAnulacion] = useState('');
   const [procesandoAnulacion, setProcesandoAnulacion] = useState(false);
 
+  // Clave numérica Hacienda copiada
+  const [claveCopiadaFactura, setClaveCopiadaFactura] = useState(false);
+
+  const copiarClaveFactura = (clave) => {
+    if (!clave) return;
+    navigator.clipboard.writeText(clave);
+    setClaveCopiadaFactura(true);
+    showToast('Clave numérica copiada al portapapeles', 'info');
+    setTimeout(() => setClaveCopiadaFactura(false), 2500);
+  };
+
   useEffect(() => {
     cargarFacturas();
     cargarMetodosPago();
