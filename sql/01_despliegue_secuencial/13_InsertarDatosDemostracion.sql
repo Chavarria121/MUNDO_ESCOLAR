@@ -85,16 +85,20 @@ BEGIN TRY
 
     PRINT '>>> PASO 3: Generación de Compras y Recepción en Bodega (Kardex)...';
 
-    DECLARE @IdBodeguero INT = 3; -- mario.bodega
-    DECLARE @IdVendedor INT = 2;   -- carlos.vargas
-    DECLARE @IdAdmin INT = 1;      -- admin
+    DECLARE @IdBodeguero INT = ISNULL((SELECT TOP 1 Id_Usuario FROM dbo.Usuario WHERE Nombre_Usuario = 'mario.bodega'), 3);
+    DECLARE @IdVendedor INT = ISNULL((SELECT TOP 1 Id_Usuario FROM dbo.Usuario WHERE Nombre_Usuario = 'carlos.vargas'), 2);
+    DECLARE @IdAdmin INT = ISNULL((SELECT TOP 1 Id_Usuario FROM dbo.Usuario WHERE Nombre_Usuario = 'admin'), 1);
+
+    DECLARE @Prov1 INT = ISNULL((SELECT TOP 1 p.Id_Proveedor FROM dbo.Proveedor_Institucional pi JOIN dbo.Proveedor p ON pi.Id_Proveedor = p.Id_Proveedor WHERE pi.Razon_Social LIKE '%Papelera Nacional%'), 1);
+    DECLARE @Prov2 INT = ISNULL((SELECT TOP 1 p.Id_Proveedor FROM dbo.Proveedor_Institucional pi JOIN dbo.Proveedor p ON pi.Id_Proveedor = p.Id_Proveedor WHERE pi.Razon_Social LIKE '%Distribuidora Escolar%'), 2);
+    DECLARE @Prov3 INT = ISNULL((SELECT TOP 1 p.Id_Proveedor FROM dbo.Proveedor_Particular pp JOIN dbo.Proveedor p ON pp.Id_Proveedor = p.Id_Proveedor WHERE pp.Nombre = 'Carlos'), 3);
 
     -- -------------------------------------------------------------
     -- COMPRA 1: Papelera Nacional S.A. (Id_Proveedor = 1)
     -- Fecha Orden: 2026-10-01 08:30 | Recepción: 2026-10-04 10:00 (A tiempo)
     -- -------------------------------------------------------------
     INSERT INTO dbo.Compra (Id_Proveedor, Id_Usuario, Id_Estado_Compra, Fecha_Compra)
-    VALUES (1, @IdBodeguero, 2, '2026-10-01 08:30:00');
+    VALUES (@Prov1, @IdBodeguero, 2, '2026-10-01 08:30:00');
     DECLARE @OC1 INT = SCOPE_IDENTITY();
 
     INSERT INTO dbo.Compra_Producto (Id_Compra, Id_Producto, Cantidad, Costo_Unitario, Subtotal)
@@ -122,7 +126,7 @@ BEGIN TRY
     -- Fecha Orden: 2026-10-02 09:15 | Recepción: 2026-10-05 14:30 (A tiempo)
     -- -------------------------------------------------------------
     INSERT INTO dbo.Compra (Id_Proveedor, Id_Usuario, Id_Estado_Compra, Fecha_Compra)
-    VALUES (2, @IdBodeguero, 2, '2026-10-02 09:15:00');
+    VALUES (@Prov2, @IdBodeguero, 2, '2026-10-02 09:15:00');
     DECLARE @OC2 INT = SCOPE_IDENTITY();
 
     INSERT INTO dbo.Compra_Producto (Id_Compra, Id_Producto, Cantidad, Costo_Unitario, Subtotal)
@@ -159,7 +163,7 @@ BEGIN TRY
     -- Fecha Orden: 2026-10-04 10:00 | Recepción: 2026-10-07 11:00 (A tiempo)
     -- -------------------------------------------------------------
     INSERT INTO dbo.Compra (Id_Proveedor, Id_Usuario, Id_Estado_Compra, Fecha_Compra)
-    VALUES (3, @IdBodeguero, 2, '2026-10-04 10:00:00');
+    VALUES (@Prov3, @IdBodeguero, 2, '2026-10-04 10:00:00');
     DECLARE @OC3 INT = SCOPE_IDENTITY();
 
     INSERT INTO dbo.Compra_Producto (Id_Compra, Id_Producto, Cantidad, Costo_Unitario, Subtotal)
@@ -176,7 +180,7 @@ BEGIN TRY
     -- Recepción Real: 2026-10-19 16:30 (+9 DÍAS DE RETRASO)
     -- -------------------------------------------------------------
     INSERT INTO dbo.Compra (Id_Proveedor, Id_Usuario, Id_Estado_Compra, Fecha_Compra)
-    VALUES (2, @IdBodeguero, 2, '2026-10-03 11:30:00');
+    VALUES (@Prov2, @IdBodeguero, 2, '2026-10-03 11:30:00');
     DECLARE @OC4 INT = SCOPE_IDENTITY();
 
     INSERT INTO dbo.Compra_Producto (Id_Compra, Id_Producto, Cantidad, Costo_Unitario, Subtotal)
