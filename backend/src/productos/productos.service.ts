@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { SqlService } from '../database/sql.service';
 import {
   ActualizarProductoDto,
@@ -68,6 +68,26 @@ export class ProductosService {
       { idUsuario: idEjecutor },
     );
     return r.filas[0] ?? { Mensaje: 'Producto actualizado con éxito.' };
+  }
+
+  async cambiarEstadoProducto(id: number, estado: boolean, idEjecutor: number) {
+    const r = await this.sql.ejecutarSP(
+      'SP_Producto_CambiarEstado',
+      { Id_Producto: id, Estado: estado ? 1 : 0 },
+      { idUsuario: idEjecutor },
+    );
+    return r.filas[0] ?? { Mensaje: 'Estado de producto actualizado.' };
+  }
+
+  async cambiarEstadoServicio(id: number, estado: boolean, idEjecutor: number) {
+    const serv = await this.consultarServicioPorId(id);
+    if (!serv) throw new NotFoundException('Servicio no encontrado');
+    return this.actualizarServicio(id, {
+      nombre: serv.Nombre,
+      descripcion: serv.Descripcion,
+      precioBase: serv.Precio_Base,
+      estado,
+    }, idEjecutor);
   }
 
   // ================= SERVICIOS =================

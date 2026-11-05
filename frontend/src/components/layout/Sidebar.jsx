@@ -10,6 +10,7 @@ import {
   FileSpreadsheet,
   ShieldCheck,
   Database,
+  UserCheck,
   ChevronLeft,
   ChevronRight,
   LogOut,
@@ -67,6 +68,12 @@ export default function Sidebar({ activeSection, onSelectSection, isCollapsed, o
       label: 'Reportes Analíticos',
       icon: FileSpreadsheet,
       permissions: ['REPORTES_VER'],
+    },
+    {
+      id: 'usuarios-roles',
+      label: 'Usuarios y Matriz de Roles',
+      icon: UserCheck,
+      permissions: ['SEGURIDAD_GESTIONAR'],
     },
     {
       id: 'auditoria',

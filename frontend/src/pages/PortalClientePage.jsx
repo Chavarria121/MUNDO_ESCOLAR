@@ -43,10 +43,12 @@ export default function PortalClientePage() {
   const [formPerfil, setFormPerfil] = useState({
     telefono: '',
     direccion: '',
+    correo: '',
     nombreContacto: '',
     telefonoContacto: '',
     correoContacto: '',
   });
+  const [modalConfirmacion, setModalConfirmacion] = useState(null);
 
   // Modal de Detalle de Factura
   const [facturaSeleccionada, setFacturaSeleccionada] = useState(null);
@@ -72,6 +74,7 @@ export default function PortalClientePage() {
         setFormPerfil({
           telefono: res.data.perfil.Telefono || '',
           direccion: res.data.perfil.Direccion || '',
+          correo: res.data.perfil.Correo || res.data.perfil.Correo_Usuario || '',
           nombreContacto: res.data.perfil.Nombre_Contacto || '',
           telefonoContacto: res.data.perfil.Telefono_Contacto || '',
           correoContacto: res.data.perfil.Correo_Contacto || '',
@@ -91,13 +94,15 @@ export default function PortalClientePage() {
     e.preventDefault();
     setGuardandoPerfil(true);
     try {
-      await api.put('/clientes/portal/mi-perfil', {
+      const res = await api.put('/clientes/portal/mi-perfil', {
         telefono: formPerfil.telefono,
         direccion: formPerfil.direccion,
+        correo: formPerfil.correo,
         nombreContacto: formPerfil.nombreContacto,
         telefonoContacto: formPerfil.telefonoContacto,
         correoContacto: formPerfil.correoContacto,
       });
+      setModalConfirmacion(res.data);
       showToast('¡Información de contacto actualizada con éxito! (RF1.5)', 'success');
       setEditandoPerfil(false);
       cargarDatosPortal();
@@ -467,10 +472,10 @@ export default function PortalClientePage() {
                   />
                 </div>
 
-                {/* Teléfono */}
+                {/* Teléfono General */}
                 <div className="space-y-1">
                   <label className="text-[11px] font-bold text-[#5C3622] uppercase tracking-wider block">
-                    Teléfono de Contacto
+                    {perfil?.Tipo_Cliente === 'Institucional' ? 'Teléfono General de la Institución' : 'Teléfono de Contacto'}
                   </label>
                   <input
                     type="text"
@@ -481,16 +486,17 @@ export default function PortalClientePage() {
                   />
                 </div>
 
-                {/* Correo Electrónico */}
+                {/* Correo Electrónico (RF1.5: Editable para Particular y Responsable Institucional) */}
                 <div className="space-y-1">
                   <label className="text-[11px] font-bold text-[#5C3622] uppercase tracking-wider block">
-                    Correo Electrónico
+                    {perfil?.Tipo_Cliente === 'Institucional' ? 'Correo del Responsable / Cuenta' : 'Correo Electrónico (Cuenta)'}
                   </label>
                   <input
-                    type="text"
-                    disabled
-                    value={perfil?.Correo || perfil?.Correo_Usuario || ''}
-                    className="w-full px-3 py-2 text-xs bg-slate-50 border border-[#DFD5C4] rounded-xl text-slate-600 font-mono"
+                    type="email"
+                    disabled={!editandoPerfil}
+                    value={formPerfil.correo}
+                    onChange={(e) => setFormPerfil({ ...formPerfil, correo: e.target.value })}
+                    className="w-full px-3 py-2 text-xs bg-white border border-[#DFD5C4] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#2D5E46] disabled:bg-slate-50 disabled:text-slate-500 font-mono"
                   />
                 </div>
               </div>
@@ -637,6 +643,93 @@ export default function PortalClientePage() {
           </div>
         </div>,
         document.body
+      )}
+
+      {/* MODAL DE CONFIRMACIÓN DE ACTUALIZACIÓN RF1.5 */}
+      {modalConfirmacion && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl border border-[#DFD5C4] overflow-hidden p-6 space-y-4 animate-in fade-in zoom-in duration-200">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2 text-emerald-800">
+                <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                <h3 className="font-bold text-sm">Actualización Exitosa (RF1.5)</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setModalConfirmacion(null)}
+                className="text-slate-400 hover:text-slate-600 p-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-600">
+              Se ha ejecutado la actualización de información de cliente preservando intactos sus identificadores de ventas, facturas y pagos históricos.
+            </p>
+
+            <div className="bg-slate-50 rounded-xl p-3 border border-slate-200 text-xs space-y-2">
+              <div className="grid grid-cols-3 font-bold text-slate-500 pb-1 border-b border-slate-200 text-[11px]">
+                <span>Campo</span>
+                <span>Valor Anterior</span>
+                <span className="text-emerald-700">Valor Actual</span>
+              </div>
+
+              {/* Teléfono General */}
+              <div className="grid grid-cols-3 items-center py-1 border-b border-slate-100">
+                <span className="font-semibold text-slate-700">Teléfono:</span>
+                <span className="text-slate-500 font-mono text-[11px] truncate">{modalConfirmacion.Telefono_Anterior || '—'}</span>
+                <span className="text-emerald-700 font-bold font-mono text-[11px] truncate">{modalConfirmacion.Telefono_Actual || '—'}</span>
+              </div>
+
+              {/* Dirección */}
+              <div className="grid grid-cols-3 items-center py-1 border-b border-slate-100">
+                <span className="font-semibold text-slate-700">Dirección:</span>
+                <span className="text-slate-500 text-[11px] truncate">{modalConfirmacion.Direccion_Anterior || '—'}</span>
+                <span className="text-emerald-700 font-bold text-[11px] truncate">{modalConfirmacion.Direccion_Actual || '—'}</span>
+              </div>
+
+              {/* Correo de Usuario */}
+              {(modalConfirmacion.Correo_Usuario_Actual || modalConfirmacion.Correo_Usuario_Anterior) && (
+                <div className="grid grid-cols-3 items-center py-1 border-b border-slate-100">
+                  <span className="font-semibold text-slate-700">Correo Cuenta:</span>
+                  <span className="text-slate-500 font-mono text-[11px] truncate">{modalConfirmacion.Correo_Usuario_Anterior || '—'}</span>
+                  <span className="text-emerald-700 font-bold font-mono text-[11px] truncate">{modalConfirmacion.Correo_Usuario_Actual || '—'}</span>
+                </div>
+              )}
+
+              {/* Institucional: Contacto, Tel Contacto, Correo Contacto */}
+              {modalConfirmacion.Razon_Social_Actual && (
+                <>
+                  <div className="grid grid-cols-3 items-center py-1 border-b border-slate-100">
+                    <span className="font-semibold text-slate-700">Nombre Contacto:</span>
+                    <span className="text-slate-500 text-[11px] truncate">{modalConfirmacion.Nombre_Contacto_Anterior || '—'}</span>
+                    <span className="text-emerald-700 font-bold text-[11px] truncate">{modalConfirmacion.Nombre_Contacto_Actual || '—'}</span>
+                  </div>
+                  <div className="grid grid-cols-3 items-center py-1 border-b border-slate-100">
+                    <span className="font-semibold text-slate-700">Tel. Contacto:</span>
+                    <span className="text-slate-500 font-mono text-[11px] truncate">{modalConfirmacion.Telefono_Contacto_Anterior || '—'}</span>
+                    <span className="text-emerald-700 font-bold font-mono text-[11px] truncate">{modalConfirmacion.Telefono_Contacto_Actual || '—'}</span>
+                  </div>
+                  <div className="grid grid-cols-3 items-center py-1">
+                    <span className="font-semibold text-slate-700">Correo Contacto:</span>
+                    <span className="text-slate-500 font-mono text-[11px] truncate">{modalConfirmacion.Correo_Contacto_Anterior || '—'}</span>
+                    <span className="text-emerald-700 font-bold font-mono text-[11px] truncate">{modalConfirmacion.Correo_Contacto_Actual || '—'}</span>
+                  </div>
+                </>
+              )}
+            </div>
+
+            <div className="flex justify-end pt-2">
+              <button
+                type="button"
+                onClick={() => setModalConfirmacion(null)}
+                className="px-4 py-2 bg-[#1A3D2F] hover:bg-[#132B20] text-white text-xs font-bold rounded-xl shadow transition"
+              >
+                Aceptar y Continuar
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

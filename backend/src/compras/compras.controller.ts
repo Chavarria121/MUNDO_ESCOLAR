@@ -106,8 +106,12 @@ export class ComprasController {
   @Post(':id/confirmar')
   @RequierePermisos(PERMISOS.COMPRAS_RECEPCIONAR)
   @ApiOperation({ summary: 'Confirmar y recepcionar compra: ingresa existencias al stock (SP_Compra_Confirmar)' })
-  confirmar(@Param('id', ParseIntPipe) id: number, @UsuarioActual() u: UsuarioSesion) {
-    return this.compras.confirmarCompra(id, u.idUsuario);
+  confirmar(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: { fechaRecepcion?: string },
+    @UsuarioActual() u: UsuarioSesion,
+  ) {
+    return this.compras.confirmarCompra(id, u.idUsuario, body?.fechaRecepcion);
   }
 
   @Post(':id/anular')

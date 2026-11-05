@@ -12,6 +12,7 @@ import ClientesPage from './pages/ClientesPage';
 import BiPage from './pages/BiPage';
 import ReportesPage from './pages/ReportesPage';
 import AuditoriaPage from './pages/AuditoriaPage';
+import UsuariosRolesPage from './pages/UsuariosRolesPage';
 import DbaPage from './pages/DbaPage';
 import PortalClientePage from './pages/PortalClientePage';
 import ModalPrimerIngresoCambioClave from './components/auth/ModalPrimerIngresoCambioClave';
@@ -115,6 +116,10 @@ export default function App() {
 
         {activeSection === 'reportes' && (
           <ReportesPage />
+        )}
+
+        {activeSection === 'usuarios-roles' && (
+          <UsuariosRolesPage />
         )}
 
         {activeSection === 'auditoria' && (

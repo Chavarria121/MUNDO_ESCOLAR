@@ -54,6 +54,7 @@ export class SqlService implements OnModuleInit, OnModuleDestroy {
         encrypt,
         trustServerCertificate,
         enableArithAbort: true,
+        useUTC: false,
       },
       pool: {
         max: 20,

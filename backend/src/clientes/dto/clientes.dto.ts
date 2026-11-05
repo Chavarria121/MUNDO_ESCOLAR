@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
 import { IsBoolean, IsDateString, IsInt, IsNotEmpty, IsOptional, IsString, MaxLength, Min, MinLength } from 'class-validator';
 
 export class CrearClienteParticularDto {
@@ -190,6 +191,34 @@ export class AutorizarCondicionPagoDto {
   @IsInt()
   @IsNotEmpty()
   idCondicionPago: number;
+}
+
+export class ConsultarHistorialGeneralDto {
+  @ApiPropertyOptional({ example: 1, description: 'ID del cliente opcional' })
+  @IsInt()
+  @IsOptional()
+  @Type(() => Number)
+  idCliente?: number;
+
+  @ApiPropertyOptional({ example: 'Particular', description: 'Particular o Institucional' })
+  @IsString()
+  @IsOptional()
+  tipoCliente?: string;
+
+  @ApiPropertyOptional({ example: '2026-01-01', description: 'Fecha de inicio del rango' })
+  @IsDateString()
+  @IsOptional()
+  fechaInicio?: string;
+
+  @ApiPropertyOptional({ example: '2026-12-31', description: 'Fecha fin del rango' })
+  @IsDateString()
+  @IsOptional()
+  fechaFin?: string;
+
+  @ApiPropertyOptional({ example: 'Confirmada', description: 'Estado de venta' })
+  @IsString()
+  @IsOptional()
+  estadoVenta?: string;
 }
 
 export class ConsultarHistorialDto {

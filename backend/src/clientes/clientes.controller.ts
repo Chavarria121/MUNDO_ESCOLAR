@@ -22,6 +22,7 @@ import {
   ActualizarClienteDto,
   AutorizarCondicionPagoDto,
   ConsultarHistorialDto,
+  ConsultarHistorialGeneralDto,
   CrearClienteInstitucionalDto,
   CrearClienteParticularDto,
 } from './dto/clientes.dto';
@@ -55,6 +56,15 @@ export class ClientesController {
   @ApiOperation({ summary: 'Listar clientes activos con datos completos (VW_ClientesActivos)' })
   activos() {
     return this.clientes.listarClientesActivos();
+  }
+
+  @Get('historial-general')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, PermisosGuard)
+  @RequierePermisos(PERMISOS.CLIENTES_CONSULTAR)
+  @ApiOperation({ summary: 'Historial general de compras y facturación de clientes (SP_Cliente_HistorialGeneral)' })
+  historialGeneral(@Query() dto: ConsultarHistorialGeneralDto) {
+    return this.clientes.consultarHistorialGeneral(dto);
   }
 
   @Get(':id')

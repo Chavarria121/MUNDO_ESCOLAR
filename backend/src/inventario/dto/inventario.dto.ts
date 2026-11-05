@@ -42,6 +42,11 @@ export class SalidaInventarioDto {
   @IsString()
   @MaxLength(150)
   motivo: string;
+
+  @ApiPropertyOptional({ example: 4, description: 'ID del tipo de movimiento / naturaleza' })
+  @IsInt()
+  @IsOptional()
+  idTipoMovimiento?: number;
 }
 
 export class AjusteInventarioDto {
@@ -90,4 +95,14 @@ export class ConsultarMovimientosDto {
   @IsOptional()
   @Type(() => Number)
   idTipoMovimiento?: number;
+
+  @ApiPropertyOptional({ example: 3, description: 'ID del usuario responsable' })
+  @IsInt()
+  @IsOptional()
+  @Type(() => Number)
+  idUsuario?: number;
+
+  @ApiPropertyOptional({ example: false, description: 'True para ascendente (antiguos primero), False para descendente (recientes primero)' })
+  @IsOptional()
+  ordenAscendente?: boolean;
 }
