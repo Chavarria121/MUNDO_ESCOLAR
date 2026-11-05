@@ -666,6 +666,63 @@ BEGIN TRY
     VALUES (SCOPE_IDENTITY(), 5, '2026-10-26 12:30:00', 10170.00, 'SINPE-88401', 1);
 
     -- =============================================================
+    -- VENTA 16: 2026-11-02 10:30:00 | Cliente 1 (María Rodríguez) - Contado (Tarjeta Débito)
+    -- REGISTRADA POR: admin (@IdAdmin) para habilitar multi-vendedor y multi-mes en BI
+    -- =============================================================
+    INSERT INTO dbo.Venta (Id_Cliente, Id_Usuario, Id_Estado_Venta, Id_Condicion_Pago, Fecha, Subtotal, Impuesto, Monto_Total)
+    VALUES (@CliPart1, @IdAdmin, 2, 1, '2026-11-02 10:30:00', 6300.00, 819.00, 7119.00);
+    SET @VentaId = SCOPE_IDENTITY();
+
+    INSERT INTO dbo.Venta_Producto (Id_Producto, Id_Venta, Cantidad, Precio_Unitario, Subtotal)
+    VALUES 
+    (1, @VentaId, 2, 1250.00, 2500.00),  -- Cuaderno Cosido
+    (9, @VentaId, 2, 1850.00, 3700.00);  -- Caja Lápices Color
+
+    INSERT INTO dbo.Venta_Servicio (Id_Venta, Id_Servicio, Cantidad, Precio_Unitario, Subtotal)
+    VALUES (@VentaId, 1, 4, 25.00, 100.00); -- Fotocopia B/N Carta
+
+    INSERT INTO dbo.Movimiento_Inventario (Id_Producto, Id_Tipo_Movimiento, Id_Usuario, Cantidad, Fecha, Motivo)
+    VALUES 
+    (1, 2, @IdAdmin, 2, '2026-11-02 10:30:00', 'Salida por Venta Noviembre #16'),
+    (9, 2, @IdAdmin, 2, '2026-11-02 10:30:00', 'Salida por Venta Noviembre #16');
+
+    UPDATE dbo.Producto SET Stock_Actual = Stock_Actual - 2 WHERE Id_Producto = 1;
+    UPDATE dbo.Producto SET Stock_Actual = Stock_Actual - 2 WHERE Id_Producto = 9;
+
+    INSERT INTO dbo.Factura (Id_Venta, Id_Estado_Factura, Fecha_Emision, Fecha_Vencimiento, Monto_Total, Saldo_Pendiente)
+    VALUES (@VentaId, 3, '2026-11-02 10:30:00', '2026-11-02 10:30:00', 7119.00, 0.00);
+
+    INSERT INTO dbo.Pago (Id_Factura, Id_Metodo_Pago, Fecha_Pago, Monto_Pagado, Numero_Referencia, Estado)
+    VALUES (SCOPE_IDENTITY(), 2, '2026-11-02 10:30:00', 7119.00, 'POS-TARJ-44102', 1);
+
+    -- =============================================================
+    -- VENTA 17: 2026-11-03 14:15:00 | Cliente 2 (Esteban Solís) - Contado (SINPE Móvil)
+    -- REGISTRADA POR: admin (@IdAdmin) para enriquecer comparativa en BI
+    -- =============================================================
+    INSERT INTO dbo.Venta (Id_Cliente, Id_Usuario, Id_Estado_Venta, Id_Condicion_Pago, Fecha, Subtotal, Impuesto, Monto_Total)
+    VALUES (@CliPart2, @IdAdmin, 2, 1, '2026-11-03 14:15:00', 31500.00, 4095.00, 35595.00);
+    SET @VentaId = SCOPE_IDENTITY();
+
+    INSERT INTO dbo.Venta_Producto (Id_Producto, Id_Venta, Cantidad, Precio_Unitario, Subtotal)
+    VALUES 
+    (12, @VentaId, 1, 30000.00, 30000.00), -- Mochila QuickSilver
+    (11, @VentaId, 1, 1500.00, 1500.00);   -- Juego Geometría
+
+    INSERT INTO dbo.Movimiento_Inventario (Id_Producto, Id_Tipo_Movimiento, Id_Usuario, Cantidad, Fecha, Motivo)
+    VALUES 
+    (12, 2, @IdAdmin, 1, '2026-11-03 14:15:00', 'Salida por Venta Noviembre #17'),
+    (11, 2, @IdAdmin, 1, '2026-11-03 14:15:00', 'Salida por Venta Noviembre #17');
+
+    UPDATE dbo.Producto SET Stock_Actual = Stock_Actual - 1 WHERE Id_Producto = 12;
+    UPDATE dbo.Producto SET Stock_Actual = Stock_Actual - 1 WHERE Id_Producto = 11;
+
+    INSERT INTO dbo.Factura (Id_Venta, Id_Estado_Factura, Fecha_Emision, Fecha_Vencimiento, Monto_Total, Saldo_Pendiente)
+    VALUES (@VentaId, 3, '2026-11-03 14:15:00', '2026-11-03 14:15:00', 35595.00, 0.00);
+
+    INSERT INTO dbo.Pago (Id_Factura, Id_Metodo_Pago, Fecha_Pago, Monto_Pagado, Numero_Referencia, Estado)
+    VALUES (SCOPE_IDENTITY(), 5, '2026-11-03 14:15:00', 35595.00, 'SINPE-NOV-99120', 1);
+
+    -- =============================================================
     -- ABONO PARCIAL DE CLIENTE INSTITUCIONAL (Factura 3 - Esc. Rep. Colombia)
     -- =============================================================
     INSERT INTO dbo.Pago (Id_Factura, Id_Metodo_Pago, Fecha_Pago, Monto_Pagado, Numero_Referencia, Estado)
@@ -678,6 +735,7 @@ BEGIN TRY
 
     PRINT '>>> PASO 5: Ejecutando Pipeline ETL para Actualizar Data Warehouse...';
 
+    EXEC dbo.SP_ETL_CargarDimVendedor;
     EXEC dbo.SP_ETL_CargarDimProducto;
     EXEC dbo.SP_ETL_CargarDimCliente;
     EXEC dbo.SP_ETL_CargarFactVentas;
