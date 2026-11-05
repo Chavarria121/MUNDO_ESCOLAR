@@ -17,6 +17,10 @@
 USE MUNDO_ESCOLAR
 GO
 
+SET ANSI_NULLS ON;
+SET QUOTED_IDENTIFIER ON;
+GO
+
 SET NOCOUNT ON;
 PRINT 'Iniciando carga de datos maestros en MUNDO_ESCOLAR...';
 GO
@@ -306,6 +310,24 @@ IF NOT EXISTS (SELECT 1 FROM Producto WHERE Nombre = 'Juego de Geometría Escola
     INSERT INTO Producto (Id_Categoria, Nombre, Descripcion, Precio_Venta, Stock_Actual, Punto_Reorden, Estado)
     VALUES (@IdCatGeom, 'Juego de Geometría Escolar', 'Estuche con regla 30cm, escuadras 45 y 60 y transportador', 1500.00, 60, 15, 1);
 GO
+
+
+-- Mochilas y Libros Escolares Adicionales (Productos 12, 13 y 14)
+DECLARE @IdCatCuad2 INT = (SELECT Id_Categoria FROM Categoria WHERE Nombre = 'Cuadernos');
+DECLARE @IdCatMoch INT = (SELECT Id_Categoria FROM Categoria WHERE Nombre = 'Mochilas');
+DECLARE @IdCatLibr INT = (SELECT Id_Categoria FROM Categoria WHERE Nombre = 'Libro Escolar');
+
+IF NOT EXISTS (SELECT 1 FROM Producto WHERE Nombre = 'Mochila QuickSilver')
+    INSERT INTO Producto (Id_Categoria, Nombre, Descripcion, Precio_Venta, Stock_Actual, Punto_Reorden, Estado)
+    VALUES (ISNULL(@IdCatMoch, @IdCatCuad2), 'Mochila QuickSilver', 'Mochila escolar de alta resistencia QuickSilver', 30000.00, 30, 2, 1);
+
+IF NOT EXISTS (SELECT 1 FROM Producto WHERE Nombre = 'Libro para Escuela')
+    INSERT INTO Producto (Id_Categoria, Nombre, Descripcion, Precio_Venta, Stock_Actual, Punto_Reorden, Estado)
+    VALUES (ISNULL(@IdCatLibr, @IdCatCuad2), 'Libro para Escuela', 'Libro para Escuela.', 2000.00, 42, 10, 1);
+
+IF NOT EXISTS (SELECT 1 FROM Producto WHERE Nombre = 'Cuaderno Escolar')
+    INSERT INTO Producto (Id_Categoria, Nombre, Descripcion, Precio_Venta, Stock_Actual, Punto_Reorden, Estado)
+    VALUES (@IdCatCuad2, 'Cuaderno Escolar', 'Cuaderno escolar, de 1ero a 6to año.', 5000.00, 25, 10, 1);
 
 -- 8. Producto_Proveedor (Asociación con costo de compra mayorista)
 DECLARE @IdProvNacional INT = (

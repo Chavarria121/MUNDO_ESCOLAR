@@ -31,6 +31,10 @@
 USE MUNDO_ESCOLAR
 GO
 
+SET ANSI_NULLS ON;
+SET QUOTED_IDENTIFIER ON;
+GO
+
 -- 1. TR_Cliente_Auditoria
 CREATE OR ALTER TRIGGER dbo.TR_Cliente_Auditoria
 ON dbo.Cliente

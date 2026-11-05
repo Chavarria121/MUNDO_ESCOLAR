@@ -95,6 +95,11 @@ IF NOT EXISTS (SELECT 1 FROM Categoria WHERE Nombre = 'Geometría')
 IF NOT EXISTS (SELECT 1 FROM Categoria WHERE Nombre = 'Mochilas')
     INSERT INTO Categoria (Nombre, Descripcion, Estado)
     VALUES ('Mochilas', 'Cartucheras escolares, bolsos para útiles y accesorios de transporte', 1);
+
+
+IF NOT EXISTS (SELECT 1 FROM Categoria WHERE Nombre = 'Libro Escolar')
+    INSERT INTO Categoria (Nombre, Descripcion, Estado)
+    VALUES ('Libro Escolar', 'Libro Escolar exento de impuestos.', 1);
 GO
 
 -- 5. Tipo_Movimiento (Naturaleza: Entrada, Salida, Ajuste, Devolución)

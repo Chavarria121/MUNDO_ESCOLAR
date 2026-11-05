@@ -22,6 +22,10 @@
 USE MUNDO_ESCOLAR;
 GO
 
+SET ANSI_NULLS ON;
+SET QUOTED_IDENTIFIER ON;
+GO
+
 SET NOCOUNT ON;
 BEGIN TRY
     BEGIN TRANSACTION;
@@ -185,13 +189,31 @@ BEGIN TRY
 
     PRINT '>>> PASO 4: Generación de 15 Ventas con Costos Reales, Facturas y Pagos...';
 
+    -- Resolución dinámica de Clientes para garantizar integridad referencial en cualquier entorno
+    DECLARE @CliPart1 INT = ISNULL((SELECT TOP 1 Id_Cliente FROM dbo.Cliente_Particular ORDER BY Id_Cliente ASC), 1);
+    DECLARE @CliPart2 INT = ISNULL((SELECT TOP 1 Id_Cliente FROM dbo.Cliente_Particular WHERE Id_Cliente > @CliPart1 ORDER BY Id_Cliente ASC), @CliPart1);
+    DECLARE @CliInst1 INT = ISNULL((SELECT TOP 1 Id_Cliente FROM dbo.Cliente_Institucional ORDER BY Id_Cliente ASC), 3);
+    DECLARE @CliInst2 INT = ISNULL((SELECT TOP 1 Id_Cliente FROM dbo.Cliente_Institucional WHERE Id_Cliente > @CliInst1 ORDER BY Id_Cliente ASC), @CliInst1);
+
+    -- Asegurar autorización de condiciones de pago para clientes institucionales
+    INSERT INTO dbo.Cliente_Condicion_Pago (Id_Cliente, Id_Condicion_Pago, Fecha_Autorizacion, Estado)
+    SELECT c.Id_Cliente, cp.Id_Condicion_Pago, CAST(GETDATE() AS DATE), 1
+    FROM dbo.Cliente c
+    CROSS JOIN dbo.Condicion_Pago cp
+    WHERE c.Id_Tipo_Cliente = (SELECT TOP 1 Id_Tipo_Cliente FROM dbo.Tipo_Cliente WHERE Nombre = 'Institucional')
+      AND NOT EXISTS (
+          SELECT 1 FROM dbo.Cliente_Condicion_Pago ccp 
+          WHERE ccp.Id_Cliente = c.Id_Cliente AND ccp.Id_Condicion_Pago = cp.Id_Condicion_Pago
+      );
+
+
     DECLARE @VentaId INT;
 
     -- =============================================================
     -- VENTA 1: 2026-10-08 09:30:00 | Cliente 1 (María Rodríguez) - Contado (Efectivo)
     -- =============================================================
     INSERT INTO dbo.Venta (Id_Cliente, Id_Usuario, Id_Estado_Venta, Id_Condicion_Pago, Fecha, Subtotal, Impuesto, Monto_Total)
-    VALUES (1, @IdVendedor, 2, 1, '2026-10-08 09:30:00', 7600.00, 988.00, 8588.00);
+    VALUES (@CliPart1, @IdVendedor, 2, 1, '2026-10-08 09:30:00', 7600.00, 988.00, 8588.00);
     SET @VentaId = SCOPE_IDENTITY();
 
     INSERT INTO dbo.Venta_Producto (Id_Producto, Id_Venta, Cantidad, Precio_Unitario, Subtotal)
@@ -223,7 +245,7 @@ BEGIN TRY
     -- VENTA 2: 2026-10-09 11:15:00 | Cliente 2 (Esteban Solís) - Contado (SINPE Móvil)
     -- =============================================================
     INSERT INTO dbo.Venta (Id_Cliente, Id_Usuario, Id_Estado_Venta, Id_Condicion_Pago, Fecha, Subtotal, Impuesto, Monto_Total)
-    VALUES (2, @IdVendedor, 2, 1, '2026-10-09 11:15:00', 10250.00, 1332.50, 11582.50);
+    VALUES (@CliPart2, @IdVendedor, 2, 1, '2026-10-09 11:15:00', 10250.00, 1332.50, 11582.50);
     SET @VentaId = SCOPE_IDENTITY();
 
     INSERT INTO dbo.Venta_Producto (Id_Producto, Id_Venta, Cantidad, Precio_Unitario, Subtotal)
@@ -255,7 +277,7 @@ BEGIN TRY
     -- VENTA 3: 2026-10-11 14:00:00 | Cliente 3 (Esc. Rep. Colombia) - Crédito 15 días
     -- =============================================================
     INSERT INTO dbo.Venta (Id_Cliente, Id_Usuario, Id_Estado_Venta, Id_Condicion_Pago, Fecha, Subtotal, Impuesto, Monto_Total)
-    VALUES (3, @IdVendedor, 2, 2, '2026-10-11 14:00:00', 90750.00, 11797.50, 102547.50);
+    VALUES (@CliInst1, @IdVendedor, 2, 2, '2026-10-11 14:00:00', 90750.00, 11797.50, 102547.50);
     SET @VentaId = SCOPE_IDENTITY();
 
     INSERT INTO dbo.Venta_Producto (Id_Producto, Id_Venta, Cantidad, Precio_Unitario, Subtotal)
@@ -282,7 +304,7 @@ BEGIN TRY
     -- VENTA 4: 2026-10-12 16:45:00 | Cliente 8 (Liberia) - Contado (Tarjeta Débito)
     -- =============================================================
     INSERT INTO dbo.Venta (Id_Cliente, Id_Usuario, Id_Estado_Venta, Id_Condicion_Pago, Fecha, Subtotal, Impuesto, Monto_Total)
-    VALUES (8, @IdVendedor, 2, 1, '2026-10-12 16:45:00', 8400.00, 1092.00, 9492.00);
+    VALUES (@CliPart1, @IdVendedor, 2, 1, '2026-10-12 16:45:00', 8400.00, 1092.00, 9492.00);
     SET @VentaId = SCOPE_IDENTITY();
 
     INSERT INTO dbo.Venta_Producto (Id_Producto, Id_Venta, Cantidad, Precio_Unitario, Subtotal)
@@ -311,7 +333,7 @@ BEGIN TRY
     -- VENTA 5: 2026-10-14 10:20:00 | Cliente 4 (Col. Científico UTN) - Crédito 30 días
     -- =============================================================
     INSERT INTO dbo.Venta (Id_Cliente, Id_Usuario, Id_Estado_Venta, Id_Condicion_Pago, Fecha, Subtotal, Impuesto, Monto_Total)
-    VALUES (4, @IdVendedor, 2, 3, '2026-10-14 10:20:00', 105750.00, 13747.50, 119497.50);
+    VALUES (@CliInst2, @IdVendedor, 2, 3, '2026-10-14 10:20:00', 105750.00, 13747.50, 119497.50);
     SET @VentaId = SCOPE_IDENTITY();
 
     INSERT INTO dbo.Venta_Producto (Id_Producto, Id_Venta, Cantidad, Precio_Unitario, Subtotal)
@@ -340,7 +362,7 @@ BEGIN TRY
     -- VENTA 6: 2026-10-15 15:30:00 | Cliente 5 (Samir Campos) - Contado (SINPE)
     -- =============================================================
     INSERT INTO dbo.Venta (Id_Cliente, Id_Usuario, Id_Estado_Venta, Id_Condicion_Pago, Fecha, Subtotal, Impuesto, Monto_Total)
-    VALUES (5, @IdVendedor, 2, 1, '2026-10-15 15:30:00', 10600.00, 1378.00, 11978.00);
+    VALUES (@CliPart2, @IdVendedor, 2, 1, '2026-10-15 15:30:00', 10600.00, 1378.00, 11978.00);
     SET @VentaId = SCOPE_IDENTITY();
 
     INSERT INTO dbo.Venta_Producto (Id_Producto, Id_Venta, Cantidad, Precio_Unitario, Subtotal)
@@ -372,7 +394,7 @@ BEGIN TRY
     -- VENTA 7: 2026-10-17 11:00:00 | Cliente 12 (Mauricio) - Contado (Tarjeta Débito)
     -- =============================================================
     INSERT INTO dbo.Venta (Id_Cliente, Id_Usuario, Id_Estado_Venta, Id_Condicion_Pago, Fecha, Subtotal, Impuesto, Monto_Total)
-    VALUES (12, @IdVendedor, 2, 1, '2026-10-17 11:00:00', 15000.00, 1950.00, 16950.00);
+    VALUES (@CliPart1, @IdVendedor, 2, 1, '2026-10-17 11:00:00', 15000.00, 1950.00, 16950.00);
     SET @VentaId = SCOPE_IDENTITY();
 
     INSERT INTO dbo.Venta_Producto (Id_Producto, Id_Venta, Cantidad, Precio_Unitario, Subtotal)
@@ -404,7 +426,7 @@ BEGIN TRY
     -- VENTA 8: 2026-10-18 17:00:00 | Cliente 2 (Esteban) - Contado (Efectivo)
     -- =============================================================
     INSERT INTO dbo.Venta (Id_Cliente, Id_Usuario, Id_Estado_Venta, Id_Condicion_Pago, Fecha, Subtotal, Impuesto, Monto_Total)
-    VALUES (2, @IdVendedor, 2, 1, '2026-10-18 17:00:00', 12600.00, 1638.00, 14238.00);
+    VALUES (@CliPart2, @IdVendedor, 2, 1, '2026-10-18 17:00:00', 12600.00, 1638.00, 14238.00);
     SET @VentaId = SCOPE_IDENTITY();
 
     INSERT INTO dbo.Venta_Producto (Id_Producto, Id_Venta, Cantidad, Precio_Unitario, Subtotal)
@@ -434,7 +456,7 @@ BEGIN TRY
     -- PRIMERA VENTA DE MOCHILAS TRAS LLEGADA TARDÍA EL 19 DE OCTUBRE
     -- =============================================================
     INSERT INTO dbo.Venta (Id_Cliente, Id_Usuario, Id_Estado_Venta, Id_Condicion_Pago, Fecha, Subtotal, Impuesto, Monto_Total)
-    VALUES (1, @IdVendedor, 2, 1, '2026-10-20 10:15:00', 37100.00, 4823.00, 41923.00);
+    VALUES (@CliPart1, @IdVendedor, 2, 1, '2026-10-20 10:15:00', 37100.00, 4823.00, 41923.00);
     SET @VentaId = SCOPE_IDENTITY();
 
     INSERT INTO dbo.Venta_Producto (Id_Producto, Id_Venta, Cantidad, Precio_Unitario, Subtotal)
@@ -466,7 +488,7 @@ BEGIN TRY
     -- VENTA 10: 2026-10-21 14:40:00 | Cliente 8 (Liberia) - Contado (SINPE)
     -- =============================================================
     INSERT INTO dbo.Venta (Id_Cliente, Id_Usuario, Id_Estado_Venta, Id_Condicion_Pago, Fecha, Subtotal, Impuesto, Monto_Total)
-    VALUES (8, @IdVendedor, 2, 1, '2026-10-21 14:40:00', 35350.00, 4595.50, 39945.50);
+    VALUES (@CliPart2, @IdVendedor, 2, 1, '2026-10-21 14:40:00', 35350.00, 4595.50, 39945.50);
     SET @VentaId = SCOPE_IDENTITY();
 
     INSERT INTO dbo.Venta_Producto (Id_Producto, Id_Venta, Cantidad, Precio_Unitario, Subtotal)
@@ -495,7 +517,7 @@ BEGIN TRY
     -- VENTA 11: 2026-10-22 16:10:00 | Cliente 13 (Prueba) - Contado (Tarjeta Débito)
     -- =============================================================
     INSERT INTO dbo.Venta (Id_Cliente, Id_Usuario, Id_Estado_Venta, Id_Condicion_Pago, Fecha, Subtotal, Impuesto, Monto_Total)
-    VALUES (13, @IdVendedor, 2, 1, '2026-10-22 16:10:00', 33500.00, 4355.00, 37855.00);
+    VALUES (@CliPart1, @IdVendedor, 2, 1, '2026-10-22 16:10:00', 33500.00, 4355.00, 37855.00);
     SET @VentaId = SCOPE_IDENTITY();
 
     INSERT INTO dbo.Venta_Producto (Id_Producto, Id_Venta, Cantidad, Precio_Unitario, Subtotal)
@@ -524,7 +546,7 @@ BEGIN TRY
     -- VENTA 12: 2026-10-23 11:30:00 | Cliente 9 (Colegio Vocacional) - Crédito 15 días
     -- =============================================================
     INSERT INTO dbo.Venta (Id_Cliente, Id_Usuario, Id_Estado_Venta, Id_Condicion_Pago, Fecha, Subtotal, Impuesto, Monto_Total)
-    VALUES (9, @IdVendedor, 2, 2, '2026-10-23 11:30:00', 68750.00, 8937.50, 77687.50);
+    VALUES (@CliInst1, @IdVendedor, 2, 2, '2026-10-23 11:30:00', 68750.00, 8937.50, 77687.50);
     SET @VentaId = SCOPE_IDENTITY();
 
     INSERT INTO dbo.Venta_Producto (Id_Producto, Id_Venta, Cantidad, Precio_Unitario, Subtotal)
@@ -553,7 +575,7 @@ BEGIN TRY
     -- VENTA 13: 2026-10-24 15:00:00 | Cliente 14 - Contado (Efectivo)
     -- =============================================================
     INSERT INTO dbo.Venta (Id_Cliente, Id_Usuario, Id_Estado_Venta, Id_Condicion_Pago, Fecha, Subtotal, Impuesto, Monto_Total)
-    VALUES (14, @IdVendedor, 2, 1, '2026-10-24 15:00:00', 37500.00, 4875.00, 42375.00);
+    VALUES (@CliPart2, @IdVendedor, 2, 1, '2026-10-24 15:00:00', 37500.00, 4875.00, 42375.00);
     SET @VentaId = SCOPE_IDENTITY();
 
     INSERT INTO dbo.Venta_Producto (Id_Producto, Id_Venta, Cantidad, Precio_Unitario, Subtotal)
@@ -582,7 +604,7 @@ BEGIN TRY
     -- VENTA 14: 2026-10-25 10:45:00 | Cliente 15 - Contado (Tarjeta Débito)
     -- =============================================================
     INSERT INTO dbo.Venta (Id_Cliente, Id_Usuario, Id_Estado_Venta, Id_Condicion_Pago, Fecha, Subtotal, Impuesto, Monto_Total)
-    VALUES (15, @IdVendedor, 2, 1, '2026-10-25 10:45:00', 36500.00, 4745.00, 41245.00);
+    VALUES (@CliPart1, @IdVendedor, 2, 1, '2026-10-25 10:45:00', 36500.00, 4745.00, 41245.00);
     SET @VentaId = SCOPE_IDENTITY();
 
     INSERT INTO dbo.Venta_Producto (Id_Producto, Id_Venta, Cantidad, Precio_Unitario, Subtotal)
@@ -611,7 +633,7 @@ BEGIN TRY
     -- VENTA 15: 2026-10-26 12:30:00 | Cliente 2 (Esteban) - Contado (SINPE)
     -- =============================================================
     INSERT INTO dbo.Venta (Id_Cliente, Id_Usuario, Id_Estado_Venta, Id_Condicion_Pago, Fecha, Subtotal, Impuesto, Monto_Total)
-    VALUES (2, @IdVendedor, 2, 1, '2026-10-26 12:30:00', 9000.00, 1170.00, 10170.00);
+    VALUES (@CliPart2, @IdVendedor, 2, 1, '2026-10-26 12:30:00', 9000.00, 1170.00, 10170.00);
     SET @VentaId = SCOPE_IDENTITY();
 
     INSERT INTO dbo.Venta_Producto (Id_Producto, Id_Venta, Cantidad, Precio_Unitario, Subtotal)

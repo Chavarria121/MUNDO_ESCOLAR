@@ -20,6 +20,10 @@
 USE MUNDO_ESCOLAR
 GO
 
+SET ANSI_NULLS ON;
+SET QUOTED_IDENTIFIER ON;
+GO
+
 -- =========================================================================
 -- MÓDULO 1: USUARIOS Y CLIENTES (SPs 1 a 8)
 -- =========================================================================
@@ -4104,6 +4108,7 @@ BEGIN
     OUTER APPLY (
         SELECT SUM(vp.Cantidad) AS CantidadVendida
         FROM dbo.Venta_Producto vp
+        INNER JOIN dbo.Venta v ON v.Id_Venta = vp.Id_Venta
         WHERE vp.Id_Producto = p.Id_Producto
           AND CAST(v.Fecha AS DATE) <= @FechaCorte
     ) ventasTot

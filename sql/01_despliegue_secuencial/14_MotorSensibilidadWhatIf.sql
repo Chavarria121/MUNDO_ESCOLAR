@@ -1,6 +1,10 @@
 USE MUNDO_ESCOLAR;
 GO
 
+SET ANSI_NULLS ON;
+SET QUOTED_IDENTIFIER ON;
+GO
+
 -- ============================================================================
 -- PROYECTO: LIBRERÍA Y PAPELERÍA MUNDO ESCOLAR
 -- FASE 6: MOTOR DE SENSIBILIDAD FINANCIERA (WHAT-IF) EN SQL SERVER & DW

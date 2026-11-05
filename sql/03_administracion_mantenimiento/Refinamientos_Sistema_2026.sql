@@ -1,6 +1,10 @@
 USE MUNDO_ESCOLAR;
 GO
 
+SET ANSI_NULLS ON;
+SET QUOTED_IDENTIFIER ON;
+GO
+
 -- =========================================================================
 -- REFINAMIENTOS SISTEMA MUNDO ESCOLAR 2026
 -- 1. SP_Usuario_Consultar
