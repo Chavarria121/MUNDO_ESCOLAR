@@ -1,6 +1,6 @@
 /* =========================================================================
    PROYECTO: LIBRERÍA Y PAPELERÍA MUNDO ESCOLAR
-   ARCHIVO: 07_Flujo_Demostracion_Exposicion.sql
+   ARCHIVO: 07_flujo_de_acciones.sql
    PROPÓSITO: SCRIPT MAESTRO DE DEMOSTRACIÓN INTEGRADA EN VIVO (HILO CONDUCTOR)
    TRIBUNAL EVALUADOR: Prof. Torrentes — Bases de Datos Avanzadas e Inteligencia de Negocios
    EQUIPO EXPOSITOR:
@@ -326,3 +326,4 @@ SELECT TOP 3
 FROM dw.DimCliente
 ORDER BY Id_Cliente, Sk_Cliente;
 GO
+
