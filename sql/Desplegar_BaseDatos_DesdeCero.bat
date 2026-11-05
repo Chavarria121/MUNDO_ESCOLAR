@@ -92,3 +92,4 @@ echo.
 echo [ERROR CRÍTICO] El despliegue se detuvo por un error.
 pause
 exit /b 1
+
