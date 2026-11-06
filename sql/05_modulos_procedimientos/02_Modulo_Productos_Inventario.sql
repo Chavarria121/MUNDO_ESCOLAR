@@ -75,6 +75,7 @@ CREATE OR ALTER PROCEDURE dbo.SP_Producto_Crear
     @Precio_Venta DECIMAL(12, 2),
     @Stock_Inicial INT = 0,
     @Punto_Reorden INT = 0,
+    @Porcentaje_IVA DECIMAL(5, 2) = 13.00,
     @Id_Producto_Nuevo INT OUTPUT
 AS
 BEGIN
@@ -88,11 +89,22 @@ BEGIN
             THROW 50112, 'El precio de venta no puede ser negativo.', 1;
         IF @Stock_Inicial < 0 OR @Punto_Reorden < 0
             THROW 50113, 'El stock inicial y el punto de reorden deben ser mayores o iguales a cero.', 1;
+        IF @Porcentaje_IVA < 0.00
+            THROW 50114, 'El porcentaje de IVA no puede ser negativo.', 1;
 
-        INSERT INTO Producto (Id_Categoria, Nombre, Descripcion, Precio_Venta, Stock_Actual, Punto_Reorden, Estado)
-        VALUES (@Id_Categoria, LTRIM(RTRIM(@Nombre)), @Descripcion, @Precio_Venta, @Stock_Inicial, @Punto_Reorden, 1);
+        INSERT INTO Producto (Id_Categoria, Nombre, Descripcion, Precio_Venta, Stock_Actual, Punto_Reorden, Porcentaje_IVA, Estado)
+        VALUES (@Id_Categoria, LTRIM(RTRIM(@Nombre)), @Descripcion, @Precio_Venta, @Stock_Inicial, @Punto_Reorden, ISNULL(@Porcentaje_IVA, 13.00), 1);
 
         SET @Id_Producto_Nuevo = SCOPE_IDENTITY();
+
+        -- Si se ingresó stock inicial, registrar movimiento inicial en kárdex
+        IF @Stock_Inicial > 0
+        BEGIN
+            DECLARE @IdUsuarioSesion INT = ISNULL(CAST(SESSION_CONTEXT(N'Id_Usuario') AS INT), (SELECT TOP 1 Id_Usuario FROM dbo.Usuario WHERE Nombre_Usuario = 'admin'));
+            INSERT INTO dbo.Movimiento_Inventario (Id_Producto, Id_Tipo_Movimiento, Id_Usuario, Cantidad, Fecha, Motivo)
+            VALUES (@Id_Producto_Nuevo, 3, @IdUsuarioSesion, @Stock_Inicial, GETDATE(), 'Carga de inventario inicial al registrar producto');
+        END
+
         SELECT @Id_Producto_Nuevo AS Id_Producto, 'Producto creado con éxito.' AS Mensaje;
     END TRY
     BEGIN CATCH
@@ -106,10 +118,11 @@ CREATE OR ALTER PROCEDURE dbo.SP_Producto_Actualizar
     @Id_Producto INT,
     @Id_Categoria INT,
     @Nombre VARCHAR(50),
-    @Descripcion VARCHAR(150),
+    @Descripcion VARCHAR(150) = NULL,
     @Precio_Venta DECIMAL(12, 2),
     @Punto_Reorden INT,
-    @Estado BIT
+    @Porcentaje_IVA DECIMAL(5, 2) = NULL,
+    @Estado BIT = 1
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -120,6 +133,8 @@ BEGIN
             THROW 50116, 'La categoría seleccionada no existe.', 1;
         IF @Precio_Venta < 0.00 OR @Punto_Reorden < 0
             THROW 50117, 'Valores numéricos no válidos.', 1;
+        IF @Porcentaje_IVA IS NOT NULL AND @Porcentaje_IVA < 0.00
+            THROW 50118, 'El porcentaje de IVA no puede ser negativo.', 1;
 
         UPDATE Producto
         SET Id_Categoria = @Id_Categoria,
@@ -127,6 +142,7 @@ BEGIN
             Descripcion = @Descripcion,
             Precio_Venta = @Precio_Venta,
             Punto_Reorden = @Punto_Reorden,
+            Porcentaje_IVA = ISNULL(@Porcentaje_IVA, Porcentaje_IVA),
             Estado = @Estado
         WHERE Id_Producto = @Id_Producto;
 
@@ -155,6 +171,7 @@ BEGIN
         p.Precio_Venta,
         p.Stock_Actual,
         p.Punto_Reorden,
+        p.Porcentaje_IVA,
         dbo.FN_EstaBajoReorden(p.Stock_Actual, p.Punto_Reorden) AS BajoReorden,
         dbo.FN_EstaAgotado(p.Stock_Actual) AS Agotado,
         p.Estado
